@@ -153,7 +153,7 @@ const App: React.FC = () => {
             onClick={() => setActiveTab('publish')} 
           />
           <NavButton 
-            icon={<MessageCircle />} 
+            icon={<MessageCircle />}
             label="Chat" 
             isActive={activeTab === 'chats'} 
             onClick={() => setActiveTab('chats')} 
