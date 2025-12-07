@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { User, Role } from '../types';
-import { saveCurrentUser, loginUserByEmail, registerUser } from '../services/storage';
-import { MapPin, Lock, Chrome } from 'lucide-react';
+import { saveCurrentUser, loginUserByEmail, registerUser, isCloudConnected } from '../services/storage';
+import { MapPin, Lock, Chrome, Wifi, WifiOff } from 'lucide-react';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -13,6 +14,7 @@ const CITIES = ['Milano', 'Roma', 'Napoli', 'Torino', 'Palermo', 'Bologna', 'Fir
 export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCloud, setIsCloud] = useState(isCloudConnected());
   
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('cliente');
@@ -81,13 +83,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 onLogin(newUser);
             } else {
                 if (res.msg === 'EXISTS') setError('Questa email è già registrata. Prova ad accedere.');
-                else if (res.msg === 'RLS_ERROR') setError('ERRORE DATABASE: Esegui i comandi SQL per RLS.');
-                else if (res.msg === 'TABLE_MISSING') setError('ERRORE GRAVE: Tabelle non trovate. Esegui lo script SQL su Supabase!');
-                else setError('Errore di connessione. Riprova.');
+                else if (res.msg === 'RLS_ERROR') setError('PERMESSI NEGATI (RLS). Esegui lo script SQL "GRANT ALL" su Supabase.');
+                else if (res.msg === 'TABLE_MISSING') setError('TABELLE MANCANTI. Esegui il "CREATE TABLE" su Supabase.');
+                else setError(`Errore Database: ${res.msg}`);
             }
         }
     } catch (e) {
-        setError('Errore imprevisto.');
+        setError('Errore imprevisto. Controlla la console.');
         console.error(e);
     } finally {
         setIsLoading(false);
@@ -132,7 +134,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-6">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-6 relative">
+      <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1 rounded-full bg-white shadow-sm border border-gray-100">
+          <span className={`w-2 h-2 rounded-full ${isCloud ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+              {isCloud ? 'Cloud Online' : 'Offline'}
+          </span>
+      </div>
+
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl relative animate-fade-in-up border border-gray-100">
         
         <div className="mb-6 text-center">
@@ -292,7 +301,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
          )}
 
           {error && (
-            <div className="text-red-500 text-sm bg-red-50 p-2 rounded-lg border border-red-100 font-medium">
+            <div className="text-red-600 text-xs bg-red-50 p-3 rounded-lg border border-red-100 font-bold whitespace-pre-wrap">
               {error}
             </div>
           )}
@@ -310,9 +319,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
           </button>
         </form>
         
-        <p className="mt-6 text-xs text-center text-gray-400">
-          Versione Online
-        </p>
+        <div className="mt-6 flex justify-center">
+            {isCloud ? (
+                 <p className="text-[10px] text-green-600 flex items-center gap-1 font-bold">
+                     <Wifi className="w-3 h-3" /> Connesso al Database
+                 </p>
+            ) : (
+                 <p className="text-[10px] text-red-500 flex items-center gap-1 font-bold">
+                     <WifiOff className="w-3 h-3" /> Database Offline
+                 </p>
+            )}
+        </div>
       </div>
     </div>
   );
