@@ -1,4 +1,3 @@
-
 import { User, Job, Review, Post, ChatThread, JobRequest, Role } from '../types';
 import { createClient } from '@supabase/supabase-js';
 
@@ -13,9 +12,10 @@ let supabase: any = null;
 if (ENABLE_CLOUD) {
     try {
         supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: { persistSession: true, autoRefreshToken: true }
+            auth: { persistSession: true, autoRefreshToken: true },
+            db: { schema: 'public' }
         });
-        console.log("✅ Supabase Client Initialized. Mode: Cloud");
+        console.log("✅ Supabase Client Initialized.");
     } catch (e) {
         console.error("❌ Failed to init Supabase:", e);
     }
@@ -59,8 +59,11 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
             const { data, error } = await supabase.from(tableName).select('*').limit(100);
             
             if (error) {
-                console.error(`🔥 SUPABASE READ ERROR [${tableName}]:`, error.message);
-                // If table doesn't exist, it might be a setup issue.
+                if (error.code === '42P01') {
+                    console.error(`🚨 TABELLA MANCANTE: ${tableName}. Esegui SQL su Supabase!`);
+                } else {
+                    console.error(`🔥 SUPABASE READ ERROR [${tableName}]:`, error.message);
+                }
                 return [];
             }
             return data.map((row: any) => row.payload) as T[];
@@ -73,30 +76,28 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
     }
 }
 
-async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<boolean> {
+async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     if (ENABLE_CLOUD && supabase) {
         try {
             const id = (item as any)[idField];
             if (!id) {
                 console.error("Cannot save item without ID");
-                return false;
+                return { success: false, error: 'Missing ID' };
             }
 
             console.log(`☁️ Saving to ${tableName}:`, item);
             const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item });
             
             if (error) {
-                console.error(`🔥 SUPABASE WRITE ERROR [${tableName}]:`, error.message, error.details);
-                // Alert user nicely
-                if (error.code === '42501') {
-                     alert("Errore Permessi: Non hai disabilitato RLS su Supabase. Esegui i comandi SQL.");
-                }
-                return false;
+                console.error(`🔥 SUPABASE WRITE ERROR [${tableName}]:`, error.message, error.code);
+                if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' };
+                if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
+                return { success: false, error: error.message };
             }
-            return true;
+            return { success: true };
         } catch (e) {
             console.error(`Exception saving to ${tableName}:`, e);
-            return false;
+            return { success: false, error: 'EXCEPTION' };
         }
     }
     
@@ -106,7 +107,7 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
     if (idx > -1) list[idx] = item;
     else list.push(item);
     localStorage.setItem(localKey, JSON.stringify(list));
-    return true;
+    return { success: true };
 }
 
 // --- USERS ---
@@ -115,19 +116,43 @@ export const getAllRegisteredUsers = async (): Promise<User[]> => {
     return await fetchTable<User>('bravo_users', KEYS.USERS_DB);
 }
 
-export const registerUser = async (user: User) => {
-    // Check duplication only if needed, but for MVP we assume email is key
+export const registerUser = async (user: User): Promise<{ success: boolean; msg?: string }> => {
+    if (ENABLE_CLOUD && supabase) {
+        // Check if user exists using MaybeSingle to avoid error if 0 rows
+        const { data, error } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
+        
+        if (error && error.code === '42P01') {
+            return { success: false, msg: 'TABLE_MISSING' };
+        }
+
+        if (data) {
+            return { success: false, msg: 'EXISTS' };
+        }
+    } else {
+        const users = await getAllRegisteredUsers();
+        if (users.find(u => u.email === user.email)) {
+             return { success: false, msg: 'EXISTS' };
+        }
+    }
+
     user.verificationStatus = 'none';
     user.isVerified = false;
     user.walletBalance = 0;
 
-    return await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
+    const res = await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
+    if (!res.success) {
+        if (res.error === 'PERMISSIONS_DENIED') return { success: false, msg: 'RLS_ERROR' };
+        if (res.error === 'TABLE_MISSING') return { success: false, msg: 'TABLE_MISSING' };
+        return { success: false, msg: 'DB_ERROR' };
+    }
+    return { success: true };
 }
 
 export const loginUserByEmail = async (email: string): Promise<User | null> => {
     if (ENABLE_CLOUD && supabase) {
-        const { data, error } = await supabase.from('bravo_users').select('*').eq('email', email).single();
-        if (error || !data) return null;
+        const { data, error } = await supabase.from('bravo_users').select('*').eq('email', email).maybeSingle();
+        if (error) console.error("Login Error:", error.message);
+        if (!data) return null;
         return data.payload as User;
     }
     const users = await getAllRegisteredUsers();
@@ -141,7 +166,6 @@ export const getCurrentUser = (): User | null => {
 
 export const saveCurrentUser = async (user: User) => {
     localStorage.setItem(KEYS.USER, JSON.stringify(user));
-    // Also update cloud record to keep sync
     await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
     window.dispatchEvent(new Event('storage'));
 };
@@ -178,7 +202,6 @@ export const getPosts = async (): Promise<Post[]> => {
     const users = await getAllRegisteredUsers();
     const registeredPros = users.filter(u => u.role === 'professionista');
 
-    // If cloud is empty (first load), show samples only if local
     if (registeredPros.length === 0 && !ENABLE_CLOUD) return SAMPLE_POSTS;
     if (registeredPros.length === 0) return []; 
 
@@ -330,13 +353,13 @@ export const saveChat = async (updatedChat: ChatThread) => {
 
 export const getRequests = async (): Promise<JobRequest[]> => {
     const data = await fetchTable<JobRequest>('bravo_requests', KEYS.REQUESTS);
-    // Sort by newest
     return data.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
 
 export const saveRequest = async (req: JobRequest): Promise<boolean> => {
     console.log("🚀 Saving Request to Cloud:", req);
-    return await saveItem('bravo_requests', KEYS.REQUESTS, req);
+    const res = await saveItem('bravo_requests', KEYS.REQUESTS, req);
+    return res.success;
 };
 
 export const applyToRequest = async (requestId: string, proName: string) => {
@@ -418,10 +441,7 @@ export const requestVerification = async (email: string) => {
 
 export const resetDatabase = async () => {
     localStorage.clear();
-    // For Supabase, we can't easily wipe everything from client without admin key.
-    // This is just a local reset for MVP.
     window.location.reload();
 }
 
-// Utility to check if cloud is really working
 export const isCloudConnected = () => ENABLE_CLOUD;
