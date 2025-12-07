@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -19,7 +20,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const [location, setLocation] = useState('');
   const [budget, setBudget] = useState('');
   const [category, setCategory] = useState('Idraulico');
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Dashboard Data
@@ -51,11 +52,12 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     if (!isClient) return;
 
     if (!title || !desc || !location) {
-        setToast('Compila titolo, descrizione e zona.');
+        setToast({msg: 'Compila titolo, descrizione e zona.', type: 'error'});
         return;
     }
 
     setIsSubmitting(true);
+    setToast(null);
 
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
@@ -85,7 +87,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         const success = await Promise.race([savePromise, timeoutPromise]);
 
         if (success) {
-            setToast('Richiesta pubblicata con successo!');
+            setToast({msg: 'Richiesta pubblicata con successo!', type: 'success'});
             // Reset form
             setTitle('');
             setDesc('');
@@ -93,15 +95,14 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             setLocation('');
             
             setTimeout(() => {
-                setToast('');
+                setToast(null);
                 setMode('dashboard'); 
             }, 1500);
         } else {
-            setToast('ERRORE: Database bloccato. Esegui i comandi SQL.');
-            alert('Supabase RLS Bloccante. Vai su SQL Editor e disabilita Row Level Security.');
+            setToast({msg: 'ERRORE DATABASE: Permessi Negati (RLS). Esegui SQL su Supabase.', type: 'error'});
         }
     } catch (e) {
-        setToast('Errore di connessione.');
+        setToast({msg: 'Errore di connessione.', type: 'error'});
     } finally {
         setIsSubmitting(false);
     }
@@ -295,8 +296,9 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         </form>
 
         {toast && (
-            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm py-2 px-4 rounded-full shadow-lg animate-fade-in-up z-50 w-max max-w-[90%] text-center">
-            {toast}
+            <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-sm py-3 px-6 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-gray-900'}`}>
+                {toast.type === 'error' && <AlertTriangle className="w-5 h-5" />}
+                {toast.msg}
             </div>
         )}
       </div>
