@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -75,20 +75,17 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         createdAt: new Date().toISOString()
     };
 
-    // Timeout protection for Vercel edge cases
     try {
-        const timeoutPromise = new Promise<boolean>((resolve) => {
-            setTimeout(() => resolve(false), 5000);
-        });
-        
-        const savePromise = saveRequest(newRequest);
-        
-        // Race condition: if save takes more than 5s, we assume failure (usually RLS blocking)
-        const success = await Promise.race([savePromise, timeoutPromise]);
+        // Tentativo di salvataggio diretto con retry interno
+        let success = false;
+        let errorMessage = '';
+
+        const res = await saveRequest(newRequest);
+        success = res.success;
+        errorMessage = res.error || '';
 
         if (success) {
-            setToast({msg: 'Richiesta pubblicata con successo!', type: 'success'});
-            // Reset form
+            setToast({msg: 'Richiesta pubblicata!', type: 'success'});
             setTitle('');
             setDesc('');
             setBudget('');
@@ -99,10 +96,16 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                 setMode('dashboard'); 
             }, 1500);
         } else {
-            setToast({msg: 'ERRORE DATABASE: Permessi Negati (RLS). Esegui SQL su Supabase.', type: 'error'});
+            if (errorMessage === 'PERMISSIONS_DENIED') {
+                 setToast({msg: 'ERRORE RLS: Esegui lo script SQL "GRANT ALL" su Supabase.', type: 'error'});
+            } else if (errorMessage === 'TABLE_MISSING') {
+                 setToast({msg: 'ERRORE TABELLE: Esegui lo script SQL "CREATE TABLE".', type: 'error'});
+            } else {
+                 setToast({msg: `Errore Database: ${errorMessage}`, type: 'error'});
+            }
         }
     } catch (e) {
-        setToast({msg: 'Errore di connessione.', type: 'error'});
+        setToast({msg: 'Errore critico di connessione.', type: 'error'});
     } finally {
         setIsSubmitting(false);
     }
@@ -285,7 +288,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             `}
             >
             {isSubmitting ? (
-                <span>Pubblicazione...</span>
+                <span>Pubblicazione in corso...</span>
             ) : (
                 <>
                 <PlusCircle className="w-5 h-5" />
@@ -296,9 +299,9 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         </form>
 
         {toast && (
-            <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-sm py-3 px-6 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-gray-900'}`}>
-                {toast.type === 'error' && <AlertTriangle className="w-5 h-5" />}
-                {toast.msg}
+            <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-xs py-3 px-4 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
+                {toast.type === 'error' ? <AlertTriangle className="w-5 h-5 min-w-[20px]" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />}
+                <span>{toast.msg}</span>
             </div>
         )}
       </div>
