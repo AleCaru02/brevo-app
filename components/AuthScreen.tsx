@@ -1,318 +1,304 @@
-import React, { useState } from 'react';
-import { User, Role } from '../types';
-import { saveCurrentUser, loginUserByEmail, registerUser } from '../services/storage';
-import { MapPin, Lock, Chrome } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, JobRequest } from '../types';
+import { saveRequest, getRequests } from '../services/storage';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw } from 'lucide-react';
 
-interface AuthScreenProps {
-  onLogin: (user: User) => void;
-  onAdmin: () => void;
+interface PublishTabProps {
+  currentUser: User;
+  onSuccess: () => void; 
 }
 
-const CITIES = ['Milano', 'Roma', 'Napoli', 'Torino', 'Palermo', 'Bologna', 'Firenze', 'Bari', 'Catania', 'Venezia', 'Verona', 'Messina', 'Padova', 'Trieste'];
+type Mode = 'new' | 'dashboard';
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
-  const [isLoginMode, setIsLoginMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }) => {
+  const [mode, setMode] = useState<Mode>('new');
   
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<Role>('cliente');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [city, setCity] = useState('Milano'); 
-  const [piva, setPiva] = useState('');
-  const [password, setPassword] = useState(''); 
-  const [error, setError] = useState('');
+  // New Request Form
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [location, setLocation] = useState('');
+  const [budget, setBudget] = useState('');
+  const [category, setCategory] = useState('Idraulico');
+  const [toast, setToast] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Dashboard Data
+  const [myRequests, setMyRequests] = useState<JobRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const isClient = currentUser.role === 'cliente';
+
+  useEffect(() => {
+    if (isClient) {
+        loadMyRequests();
+    }
+  }, [currentUser, mode]);
+
+  const loadMyRequests = async () => {
+      setIsLoading(true);
+      try {
+        const reqs = await getRequests();
+        setMyRequests(reqs.filter(r => r.clientId === currentUser.email || r.clientName === currentUser.name));
+      } catch (e) {
+        console.error("Failed to load requests", e);
+      } finally {
+        setIsLoading(false);
+      }
+  }
+
+  const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setIsLoading(true);
+    if (!isClient) return;
 
+    if (!title || !desc || !location) {
+        setToast('Compila titolo, descrizione e zona.');
+        return;
+    }
+
+    setIsSubmitting(true);
+
+    const newRequest: JobRequest = {
+        id: `req_${Date.now()}`,
+        clientId: currentUser.email,
+        clientName: currentUser.name,
+        clientAvatar: currentUser.avatar || '',
+        category,
+        title,
+        description: desc,
+        location,
+        budget: budget || 'Da concordare',
+        images: ['https://picsum.photos/400/300?random=' + Math.floor(Math.random() * 100)],
+        status: 'open',
+        candidates: [],
+        createdAt: new Date().toISOString()
+    };
+
+    // Timeout protection for Vercel edge cases
     try {
-        if (isLoginMode) {
-            if (!email) {
-                setError('Inserisci la tua email.');
-                setIsLoading(false);
-                return;
-            }
+        const timeoutPromise = new Promise<boolean>((resolve) => {
+            setTimeout(() => resolve(false), 5000);
+        });
+        
+        const savePromise = saveRequest(newRequest);
+        
+        // Race condition: if save takes more than 5s, we assume failure (usually RLS blocking)
+        const success = await Promise.race([savePromise, timeoutPromise]);
 
-            if (email.toLowerCase() === 'admin@bravo.com') {
-                onAdmin();
-                return;
-            }
-
-            const foundUser = await loginUserByEmail(email);
-            if (foundUser) {
-                await saveCurrentUser(foundUser);
-                onLogin(foundUser);
-            } else {
-                setError('Utente non trovato. Controlla l\'email o registrati.');
-            }
-
+        if (success) {
+            setToast('Richiesta pubblicata con successo!');
+            // Reset form
+            setTitle('');
+            setDesc('');
+            setBudget('');
+            setLocation('');
+            
+            setTimeout(() => {
+                setToast('');
+                setMode('dashboard'); 
+            }, 1500);
         } else {
-            if (!name.trim() || !email.trim() || !phone.trim() || !city.trim()) {
-                setError('Inserisci tutti i campi obbligatori.');
-                setIsLoading(false);
-                return;
-            }
-
-            if (role === 'professionista' && !piva.trim()) {
-                setError('Per registrarti come professionista devi inserire una Partita IVA.');
-                setIsLoading(false);
-                return;
-            }
-
-            const newUser: User = {
-                name,
-                role,
-                piva: role === 'professionista' ? piva : null,
-                email,
-                phone,
-                city,
-                bio: role === 'professionista' ? `Professionista operativo a ${city}` : `Cliente di ${city}`,
-                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'cliente' ? '007AFF' : '10b981'}&color=fff`,
-                walletBalance: 0,
-                verificationStatus: 'none'
-            };
-
-            const res = await registerUser(newUser);
-            if (res.success) {
-                await saveCurrentUser(newUser);
-                onLogin(newUser);
-            } else {
-                if (res.msg === 'EXISTS') setError('Questa email è già registrata. Prova ad accedere.');
-                else if (res.msg === 'RLS_ERROR') setError('ERRORE DATABASE: Esegui i comandi SQL per RLS.');
-                else if (res.msg === 'TABLE_MISSING') setError('ERRORE GRAVE: Tabelle non trovate. Esegui lo script SQL su Supabase!');
-                else setError('Errore di connessione. Riprova.');
-            }
+            setToast('ERRORE: Database bloccato. Esegui i comandi SQL.');
+            alert('Supabase RLS Bloccante. Vai su SQL Editor e disabilita Row Level Security.');
         }
     } catch (e) {
-        setError('Errore imprevisto.');
-        console.error(e);
+        setToast('Errore di connessione.');
     } finally {
-        setIsLoading(false);
+        setIsSubmitting(false);
     }
   };
 
-  const handleGoogleLogin = async () => {
-      setIsLoading(true);
-      
-      setTimeout(async () => {
-        const mockEmail = `mario.google@gmail.com`;
-        const found = await loginUserByEmail(mockEmail);
-        
-        if (found) {
-            await saveCurrentUser(found);
-            onLogin(found);
-        } else {
-            const newUser: User = {
-                name: `Mario Google`,
-                role: 'cliente',
-                piva: null,
-                email: mockEmail,
-                phone: '',
-                city: 'Milano',
-                bio: `Utente verificato con Google`,
-                avatar: `https://ui-avatars.com/api/?name=Mario+Google&background=DB4437&color=fff`,
-                verificationStatus: 'verified',
-                isVerified: true,
-                walletBalance: 0
-            };
-            const res = await registerUser(newUser);
-            if (res.success || res.msg === 'EXISTS') {
-                await saveCurrentUser(newUser);
-                onLogin(newUser);
-            } else {
-                if (res.msg === 'TABLE_MISSING') setError('ERRORE: Tabelle mancanti su Supabase.');
-                else setError('Errore login Google (Database non scrivibile).');
-            }
-        }
-        setIsLoading(false);
-      }, 1500);
+  if (!isClient) {
+      return (
+        <div className="p-6 pb-24 flex flex-col items-center justify-center h-full text-center">
+             <div className="bg-orange-100 p-4 rounded-full mb-4">
+                 <Briefcase className="w-8 h-8 text-orange-600" />
+             </div>
+             <h2 className="text-xl font-bold text-gray-900 mb-2">Sezione per i Clienti</h2>
+             <p className="text-gray-600 max-w-xs">
+                 Solo chi è registrato come <b>Cliente</b> può pubblicare richieste di lavoro.
+             </p>
+        </div>
+      );
   }
 
+  // --- DASHBOARD VIEW ---
+  if (mode === 'dashboard') {
+      return (
+        <div className="bg-gray-50 min-h-full pb-24">
+             <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
+                 <h2 className="text-xl font-bold text-gray-900">Le mie Richieste</h2>
+                 <div className="flex gap-2">
+                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
+                    <button 
+                        onClick={() => setMode('new')}
+                        className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100"
+                    >
+                        + Nuova
+                    </button>
+                 </div>
+             </div>
+             
+             <div className="p-4 space-y-4">
+                 {isLoading && myRequests.length === 0 && (
+                     <div className="text-center py-10"><RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500"/></div>
+                 )}
+                 
+                 {!isLoading && myRequests.length === 0 ? (
+                     <div className="text-center py-10 text-gray-400">
+                         <List className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                         <p>Non hai ancora pubblicato richieste.</p>
+                     </div>
+                 ) : (
+                     myRequests.map(req => {
+                         let statusColor = 'bg-blue-100 text-blue-800';
+                         let statusText = 'Aperta';
+                         if (req.status === 'in_progress') { statusColor = 'bg-orange-100 text-orange-800'; statusText = 'In Corso'; }
+                         if (req.status === 'completed') { statusColor = 'bg-green-100 text-green-800'; statusText = 'Completata'; }
+
+                         return (
+                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${statusColor}`}>{statusText}</span>
+                                    <span className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleDateString()}</span>
+                                </div>
+                                <h3 className="font-bold text-gray-900">{req.title}</h3>
+                                <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                                    <MapPin className="w-3 h-3" /> {req.location}
+                                </p>
+                                
+                                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-50 text-sm">
+                                    <div className="text-gray-600">
+                                        Budget: <span className="font-semibold text-gray-900">{req.budget}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-gray-600">
+                                        <Briefcase className="w-4 h-4" />
+                                        {req.status === 'open' 
+                                            ? `${req.candidates.length} candidati` 
+                                            : `Assegnato a ${req.assignedPro}`}
+                                    </div>
+                                </div>
+                            </div>
+                         );
+                     })
+                 )}
+             </div>
+        </div>
+      );
+  }
+
+  // --- NEW REQUEST FORM ---
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 px-6">
-      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl relative animate-fade-in-up border border-gray-100">
-        
-        <div className="mb-6 text-center">
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">Bravo</h1>
-          <p className="text-gray-500">Il Social dei Professionisti</p>
-        </div>
-
-        <button 
-            onClick={handleGoogleLogin}
-            disabled={isLoading}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg p-3 text-gray-700 font-bold hover:bg-gray-50 transition-colors mb-6 shadow-sm active:scale-[0.98]"
-        >
-             {isLoading ? (
-                 <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-             ) : (
-                 <Chrome className="w-5 h-5 text-red-500" />
-             )}
-             {isLoading ? 'Attendi...' : 'Continua con Google'}
-        </button>
-
-        <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">oppure usa la tua email</span>
-            </div>
-        </div>
-
-        <div className="flex bg-gray-100 p-1 rounded-lg mb-6">
+    <div className="bg-gray-50 min-h-full pb-24">
+      <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
+            <h2 className="text-xl font-bold text-gray-900">Nuova Richiesta</h2>
             <button 
-                onClick={() => setIsLoginMode(false)}
-                className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${!isLoginMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setMode('dashboard')}
+            className="text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200"
             >
-                Registrati
+                Le mie Richieste
             </button>
-            <button 
-                onClick={() => setIsLoginMode(true)}
-                className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${isLoginMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-                Accedi
-            </button>
-        </div>
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLoginMode && (
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Chi sei?</label>
-                <div className="grid grid-cols-2 gap-2">
-                <button
-                    type="button"
-                    onClick={() => setRole('cliente')}
-                    className={`p-3 rounded-lg border text-sm font-medium transition-colors ${
-                    role === 'cliente'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                >
-                    Cliente
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setRole('professionista')}
-                    className={`p-3 rounded-lg border text-sm font-medium transition-colors ${
-                    role === 'professionista'
-                        ? 'bg-green-600 text-white border-green-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                >
-                    Professionista
-                </button>
-                </div>
-            </div>
-          )}
-
-          {!isLoginMode && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome e Cognome</label>
-                <input
-                type="text"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="Mario Rossi"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                />
-             </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-            type="email"
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            placeholder="mario@email.it"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            />
-         </div>
-
-         {isLoginMode && (
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-                    <input
-                        type="password"
-                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                    />
-                </div>
-             </div>
-         )}
-
-         {!isLoginMode && (
-            <>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Telefono</label>
-                    <input
-                    type="tel"
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    placeholder="333 1234567"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    />
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Città / Zona Operativa</label>
-                    <div className="relative">
-                        <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400 z-10" />
-                        <select
-                            value={city}
-                            onChange={(e) => setCity(e.target.value)}
-                            className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 appearance-none relative z-0"
-                            style={{ backgroundImage: 'none' }}
-                        >
-                            {CITIES.map(c => <option key={c} value={c} className="text-gray-900 bg-white">{c}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                {role === 'professionista' && (
-                    <div className="animate-fade-in">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Partita IVA</label>
-                    <input
-                        type="text"
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none"
-                        placeholder="IT12345678901"
-                        value={piva}
-                        onChange={(e) => setPiva(e.target.value)}
-                    />
-                    </div>
-                )}
-            </>
-         )}
-
-          {error && (
-            <div className="text-red-500 text-sm bg-red-50 p-2 rounded-lg border border-red-100 font-medium">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={`w-full text-white font-bold py-3 rounded-lg hover:opacity-90 transition-all shadow-lg ${
-                isLoginMode 
-                    ? 'bg-gray-900 shadow-gray-400'
-                    : (role === 'cliente' ? 'bg-blue-600 shadow-blue-200' : 'bg-green-600 shadow-green-200')
-            } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
-          >
-            {isLoading ? 'Caricamento...' : (isLoginMode ? 'Accedi a Bravo' : 'Registrati')}
-          </button>
-        </form>
-        
-        <p className="mt-6 text-xs text-center text-gray-400">
-          Versione Online
+      <div className="p-6">
+        <p className="text-gray-500 text-sm mb-6">
+            Descrivi di cosa hai bisogno e ricevi proposte dai professionisti.
         </p>
+
+        <form onSubmit={handlePublish} className="space-y-4">
+            
+            <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+            <select 
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
+                <option>Idraulico</option>
+                <option>Elettricista</option>
+                <option>Imbianchino</option>
+                <option>Muratore</option>
+                <option>Tuttofare</option>
+                <option>Giardiniere</option>
+            </select>
+            </div>
+
+            <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Titolo Annuncio</label>
+            <input 
+                type="text" 
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Es. Perdita acqua bagno"
+                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            </div>
+
+            <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Zona / Città</label>
+            <div className="relative">
+                <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
+                <input 
+                    type="text" 
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="Es. Milano Centro, Via Roma..."
+                    className="w-full pl-10 p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+            </div>
+            </div>
+
+            <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione Dettagliata</label>
+            <textarea 
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                placeholder="Spiega il problema, le misure, o il risultato desiderato..."
+                rows={4}
+                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Budget Previsto (Opzionale)</label>
+                <input 
+                    type="text" 
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    placeholder="Es. 100€ o 'Da valutare'"
+                    className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+            </div>
+
+            <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center gap-2 text-gray-400 cursor-pointer hover:bg-gray-50 transition-colors">
+                <ImageIcon className="w-5 h-5" />
+                <span className="text-sm">Aggiungi Foto (Simulato)</span>
+            </div>
+
+            <button 
+            type="submit" 
+            disabled={!title || !desc || !location || isSubmitting}
+            className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors mt-4
+                ${title && desc && location && !isSubmitting
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700' 
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
+            `}
+            >
+            {isSubmitting ? (
+                <span>Pubblicazione...</span>
+            ) : (
+                <>
+                <PlusCircle className="w-5 h-5" />
+                Pubblica Richiesta
+                </>
+            )}
+            </button>
+        </form>
+
+        {toast && (
+            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm py-2 px-4 rounded-full shadow-lg animate-fade-in-up z-50 w-max max-w-[90%] text-center">
+            {toast}
+            </div>
+        )}
       </div>
     </div>
   );
