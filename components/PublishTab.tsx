@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests } from '../services/storage';
@@ -37,9 +36,14 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
   const loadMyRequests = async () => {
       setIsLoading(true);
-      const reqs = await getRequests();
-      setMyRequests(reqs.filter(r => r.clientId === currentUser.email || r.clientName === currentUser.name));
-      setIsLoading(false);
+      try {
+        const reqs = await getRequests();
+        setMyRequests(reqs.filter(r => r.clientId === currentUser.email || r.clientName === currentUser.name));
+      } catch (e) {
+        console.error("Failed to load requests", e);
+      } finally {
+        setIsLoading(false);
+      }
   }
 
   const handlePublish = async (e: React.FormEvent) => {
@@ -69,25 +73,37 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         createdAt: new Date().toISOString()
     };
 
-    const success = await saveRequest(newRequest);
-    setIsSubmitting(false);
+    // Timeout protection for Vercel edge cases
+    try {
+        const timeoutPromise = new Promise<boolean>((resolve) => {
+            setTimeout(() => resolve(false), 5000);
+        });
+        
+        const savePromise = saveRequest(newRequest);
+        
+        // Race condition: if save takes more than 5s, we assume failure (usually RLS blocking)
+        const success = await Promise.race([savePromise, timeoutPromise]);
 
-    if (success) {
-        setToast('Richiesta pubblicata con successo!');
-        
-        // Reset form
-        setTitle('');
-        setDesc('');
-        setBudget('');
-        setLocation('');
-        
-        setTimeout(() => {
-            setToast('');
-            setMode('dashboard'); // Go to dashboard to see new request
-        }, 1500);
-    } else {
-        setToast('ERRORE: Impossibile pubblicare. Controlla i permessi SQL.');
-        alert('Errore Pubblicazione: Verifica che su Supabase hai eseguito i comandi per disabilitare RLS.');
+        if (success) {
+            setToast('Richiesta pubblicata con successo!');
+            // Reset form
+            setTitle('');
+            setDesc('');
+            setBudget('');
+            setLocation('');
+            
+            setTimeout(() => {
+                setToast('');
+                setMode('dashboard'); 
+            }, 1500);
+        } else {
+            setToast('ERRORE: Database bloccato. Esegui i comandi SQL.');
+            alert('Supabase RLS Bloccante. Vai su SQL Editor e disabilita Row Level Security.');
+        }
+    } catch (e) {
+        setToast('Errore di connessione.');
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -279,7 +295,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         </form>
 
         {toast && (
-            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm py-2 px-4 rounded-full shadow-lg animate-fade-in-up z-50">
+            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm py-2 px-4 rounded-full shadow-lg animate-fade-in-up z-50 w-max max-w-[90%] text-center">
             {toast}
             </div>
         )}
