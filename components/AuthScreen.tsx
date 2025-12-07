@@ -28,61 +28,70 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
     setError('');
     setIsLoading(true);
 
-    if (isLoginMode) {
-        if (!email) {
-            setError('Inserisci la tua email.');
-            setIsLoading(false);
-            return;
-        }
+    try {
+        if (isLoginMode) {
+            if (!email) {
+                setError('Inserisci la tua email.');
+                setIsLoading(false);
+                return;
+            }
 
-        if (email.toLowerCase() === 'admin@bravo.com') {
-            onAdmin();
-            return;
-        }
+            if (email.toLowerCase() === 'admin@bravo.com') {
+                onAdmin();
+                return;
+            }
 
-        const foundUser = await loginUserByEmail(email);
-        if (foundUser) {
-            await saveCurrentUser(foundUser);
-            onLogin(foundUser);
+            const foundUser = await loginUserByEmail(email);
+            if (foundUser) {
+                await saveCurrentUser(foundUser);
+                onLogin(foundUser);
+            } else {
+                setError('Utente non trovato. Controlla l\'email o registrati.');
+            }
+
         } else {
-            setError('Utente non trovato. Controlla l\'email o registrati.');
-        }
+            if (!name.trim() || !email.trim() || !phone.trim() || !city.trim()) {
+                setError('Inserisci tutti i campi obbligatori.');
+                setIsLoading(false);
+                return;
+            }
 
-    } else {
-        if (!name.trim() || !email.trim() || !phone.trim() || !city.trim()) {
-            setError('Inserisci tutti i campi obbligatori.');
-            setIsLoading(false);
-            return;
-        }
+            if (role === 'professionista' && !piva.trim()) {
+                setError('Per registrarti come professionista devi inserire una Partita IVA.');
+                setIsLoading(false);
+                return;
+            }
 
-        if (role === 'professionista' && !piva.trim()) {
-            setError('Per registrarti come professionista devi inserire una Partita IVA.');
-            setIsLoading(false);
-            return;
-        }
+            const newUser: User = {
+                name,
+                role,
+                piva: role === 'professionista' ? piva : null,
+                email,
+                phone,
+                city,
+                bio: role === 'professionista' ? `Professionista operativo a ${city}` : `Cliente di ${city}`,
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'cliente' ? '007AFF' : '10b981'}&color=fff`,
+                walletBalance: 0,
+                verificationStatus: 'none'
+            };
 
-        const newUser: User = {
-            name,
-            role,
-            piva: role === 'professionista' ? piva : null,
-            email,
-            phone,
-            city,
-            bio: role === 'professionista' ? `Professionista operativo a ${city}` : `Cliente di ${city}`,
-            avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'cliente' ? '007AFF' : '10b981'}&color=fff`,
-            walletBalance: 0,
-            verificationStatus: 'none'
-        };
-
-        const success = await registerUser(newUser);
-        if (success) {
-            await saveCurrentUser(newUser);
-            onLogin(newUser);
-        } else {
-            setError('Questa email è già registrata. Prova ad accedere.');
+            const res = await registerUser(newUser);
+            if (res.success) {
+                await saveCurrentUser(newUser);
+                onLogin(newUser);
+            } else {
+                if (res.msg === 'EXISTS') setError('Questa email è già registrata. Prova ad accedere.');
+                else if (res.msg === 'RLS_ERROR') setError('ERRORE DATABASE: Esegui i comandi SQL per RLS.');
+                else if (res.msg === 'TABLE_MISSING') setError('ERRORE GRAVE: Tabelle non trovate. Esegui lo script SQL su Supabase!');
+                else setError('Errore di connessione. Riprova.');
+            }
         }
+    } catch (e) {
+        setError('Errore imprevisto.');
+        console.error(e);
+    } finally {
+        setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -109,9 +118,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 isVerified: true,
                 walletBalance: 0
             };
-            await registerUser(newUser);
-            await saveCurrentUser(newUser);
-            onLogin(newUser);
+            const res = await registerUser(newUser);
+            if (res.success || res.msg === 'EXISTS') {
+                await saveCurrentUser(newUser);
+                onLogin(newUser);
+            } else {
+                if (res.msg === 'TABLE_MISSING') setError('ERRORE: Tabelle mancanti su Supabase.');
+                else setError('Errore login Google (Database non scrivibile).');
+            }
         }
         setIsLoading(false);
       }, 1500);
@@ -297,7 +311,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
         </form>
         
         <p className="mt-6 text-xs text-center text-gray-400">
-          Modalità Cloud Attiva.
+          Versione Online
         </p>
       </div>
     </div>
