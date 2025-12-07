@@ -453,3 +453,4 @@ export const resetDatabase = async () => {
 }
 
 export const isCloudConnected = () => ENABLE_CLOUD;
+ 
