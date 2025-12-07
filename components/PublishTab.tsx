@@ -1,310 +1,455 @@
 
-import React, { useState, useEffect } from 'react';
-import { User, JobRequest } from '../types';
-import { saveRequest, getRequests } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { User, Job, Review, Post, ChatThread, JobRequest, Role } from '../types';
+import { createClient } from '@supabase/supabase-js';
 
-interface PublishTabProps {
-  currentUser: User;
-  onSuccess: () => void; 
+// --- CONFIGURATION ---
+const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
+// FIXED KEY: Correct anon key provided
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
+
+// Force Cloud mode if keys are present
+const ENABLE_CLOUD = !!SUPABASE_URL && !!SUPABASE_KEY;
+
+let supabase: any = null;
+if (ENABLE_CLOUD) {
+    try {
+        supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: { persistSession: true, autoRefreshToken: true },
+            db: { schema: 'public' },
+        });
+        console.log("✅ Supabase Client Initialized.");
+    } catch (e) {
+        console.error("❌ Failed to init Supabase:", e);
+    }
 }
 
-type Mode = 'new' | 'dashboard';
+const KEYS = {
+  USER: 'bravo_current_user',
+  USERS_DB: 'bravo_users_db',
+  JOBS: 'bravo_jobs',
+  REVIEWS: 'bravo_reviews',
+  CHATS: 'bravo_chats',
+  REQUESTS: 'bravo_requests',
+};
 
-export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }) => {
-  const [mode, setMode] = useState<Mode>('new');
-  
-  // New Request Form
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [location, setLocation] = useState('');
-  const [budget, setBudget] = useState('');
-  const [category, setCategory] = useState('Idraulico');
-  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+const COMMISSION_RATE = 0.05;
 
-  // Dashboard Data
-  const [myRequests, setMyRequests] = useState<JobRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+// --- Mock Data Fallback ---
+const SAMPLE_POSTS: Post[] = [
+  {
+    id: '1',
+    category: 'Idraulico',
+    title: 'Rifacimento completo bagno',
+    image: 'https://picsum.photos/400/300?random=1',
+    professional: {
+      name: 'Mario Rossi',
+      avatar: 'https://ui-avatars.com/api/?name=Mario+Rossi&background=0D8ABC&color=fff',
+      city: 'Milano',
+      distance: '2 km da te',
+      responseTime: 'Entro 1 ora',
+      isVerified: true
+    },
+  },
+];
 
-  const isClient = currentUser.role === 'cliente';
+// --- HELPER FOR DB ACCESS ---
 
-  useEffect(() => {
-    if (isClient) {
-        loadMyRequests();
-    }
-  }, [currentUser, mode]);
-
-  const loadMyRequests = async () => {
-      setIsLoading(true);
-      try {
-        const reqs = await getRequests();
-        setMyRequests(reqs.filter(r => r.clientId === currentUser.email || r.clientName === currentUser.name));
-      } catch (e) {
-        console.error("Failed to load requests", e);
-      } finally {
-        setIsLoading(false);
-      }
-  }
-
-  const handlePublish = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isClient) return;
-
-    if (!title || !desc || !location) {
-        setToast({msg: 'Compila titolo, descrizione e zona.', type: 'error'});
-        return;
-    }
-
-    setIsSubmitting(true);
-    setToast(null);
-
-    const newRequest: JobRequest = {
-        id: `req_${Date.now()}`,
-        clientId: currentUser.email,
-        clientName: currentUser.name,
-        clientAvatar: currentUser.avatar || '',
-        category,
-        title,
-        description: desc,
-        location,
-        budget: budget || 'Da concordare',
-        images: ['https://picsum.photos/400/300?random=' + Math.floor(Math.random() * 100)],
-        status: 'open',
-        candidates: [],
-        createdAt: new Date().toISOString()
-    };
-
-    try {
-        // Tentativo di salvataggio diretto con retry interno
-        let success = false;
-        let errorMessage = '';
-
-        const res = await saveRequest(newRequest);
-        success = res.success;
-        errorMessage = res.error || '';
-
-        if (success) {
-            setToast({msg: 'Richiesta pubblicata!', type: 'success'});
-            setTitle('');
-            setDesc('');
-            setBudget('');
-            setLocation('');
+async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
+    if (ENABLE_CLOUD && supabase) {
+        try {
+            const { data, error } = await supabase.from(tableName).select('*').limit(100);
             
-            setTimeout(() => {
-                setToast(null);
-                setMode('dashboard'); 
-            }, 1500);
-        } else {
-            if (errorMessage === 'PERMISSIONS_DENIED') {
-                 setToast({msg: 'ERRORE RLS: Esegui lo script SQL "GRANT ALL" su Supabase.', type: 'error'});
-            } else if (errorMessage === 'TABLE_MISSING') {
-                 setToast({msg: 'ERRORE TABELLE: Esegui lo script SQL "CREATE TABLE".', type: 'error'});
-            } else {
-                 setToast({msg: `Errore Database: ${errorMessage}`, type: 'error'});
+            if (error) {
+                if (error.code === '42P01') {
+                    console.error(`🚨 TABELLA MANCANTE: ${tableName}. Esegui SQL su Supabase!`);
+                } else {
+                    console.error(`🔥 SUPABASE READ ERROR [${tableName}]:`, error.message);
+                }
+                return [];
+            }
+            return data.map((row: any) => row.payload) as T[];
+        } catch (e) {
+            console.error(`Exception fetching ${tableName}:`, e);
+            return [];
+        }
+    } else {
+        return JSON.parse(localStorage.getItem(localKey) || '[]');
+    }
+}
+
+async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
+    if (ENABLE_CLOUD && supabase) {
+        try {
+            const id = (item as any)[idField];
+            if (!id) {
+                console.error("Cannot save item without ID");
+                return { success: false, error: 'Missing ID' };
+            }
+
+            console.log(`☁️ Saving to ${tableName}:`, item);
+            
+            // Try UPSERT which is more robust
+            const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField });
+            
+            if (error) {
+                console.error(`🔥 SUPABASE WRITE ERROR [${tableName}]:`, error.message, error.code, error.details);
+                
+                if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; // RLS Error
+                if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
+                if (error.code === '23505') return { success: false, error: 'DUPLICATE' }; // Unique violation
+                
+                return { success: false, error: error.message };
+            }
+            return { success: true };
+        } catch (e) {
+            console.error(`Exception saving to ${tableName}:`, e);
+            return { success: false, error: 'EXCEPTION' };
+        }
+    }
+    
+    // Local Storage Fallback
+    const list = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const idx = list.findIndex((x: any) => (x as any)[idField] === (item as any)[idField]);
+    if (idx > -1) list[idx] = item;
+    else list.push(item);
+    localStorage.setItem(localKey, JSON.stringify(list));
+    return { success: true };
+}
+
+// --- USERS ---
+
+export const getAllRegisteredUsers = async (): Promise<User[]> => {
+    return await fetchTable<User>('bravo_users', KEYS.USERS_DB);
+}
+
+export const registerUser = async (user: User): Promise<{ success: boolean; msg?: string }> => {
+    if (ENABLE_CLOUD && supabase) {
+        // Check if user exists
+        const { data, error } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
+        
+        if (error) {
+            if (error.code === '42P01') return { success: false, msg: 'TABLE_MISSING' };
+            // Ignore other read errors during registration check
+        }
+
+        if (data) {
+            return { success: false, msg: 'EXISTS' };
+        }
+    } else {
+        const users = await getAllRegisteredUsers();
+        if (users.find(u => u.email === user.email)) {
+             return { success: false, msg: 'EXISTS' };
+        }
+    }
+
+    user.verificationStatus = 'none';
+    user.isVerified = false;
+    user.walletBalance = 0;
+
+    const res = await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
+    if (!res.success) {
+        if (res.error === 'PERMISSIONS_DENIED') return { success: false, msg: 'RLS_ERROR' };
+        if (res.error === 'TABLE_MISSING') return { success: false, msg: 'TABLE_MISSING' };
+        return { success: false, msg: `DB_ERROR: ${res.error}` };
+    }
+    return { success: true };
+}
+
+export const loginUserByEmail = async (email: string): Promise<User | null> => {
+    if (ENABLE_CLOUD && supabase) {
+        const { data, error } = await supabase.from('bravo_users').select('*').eq('email', email).maybeSingle();
+        if (error) console.error("Login Error:", error.message);
+        if (!data) return null;
+        return data.payload as User;
+    }
+    const users = await getAllRegisteredUsers();
+    return users.find(u => u.email === email) || null;
+}
+
+export const getCurrentUser = (): User | null => {
+    const stored = localStorage.getItem(KEYS.USER);
+    return stored ? JSON.parse(stored) : null;
+};
+
+export const saveCurrentUser = async (user: User) => {
+    localStorage.setItem(KEYS.USER, JSON.stringify(user));
+    // Also update in cloud to keep profile fresh
+    await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
+    window.dispatchEvent(new Event('storage'));
+};
+
+export const switchUserRole = async (newRole: Role) => {
+    const user = getCurrentUser();
+    if (user) {
+        user.role = newRole;
+        await saveCurrentUser(user);
+        return user;
+    }
+    return null;
+}
+
+export const logoutUser = () => {
+    localStorage.removeItem(KEYS.USER);
+};
+
+// --- POSTS / PROS ---
+
+export const getReviewStats = async (proName: string) => {
+    const allReviews = await fetchTable<Review>('bravo_reviews', KEYS.REVIEWS);
+    const proReviews = allReviews.filter((r: any) => r.professionalName === proName);
+    
+    const count = proReviews.length;
+    const average = count > 0 
+      ? (proReviews.reduce((acc, curr) => acc + curr.rating, 0) / count).toFixed(1) 
+      : '0.0';
+      
+    return { count, rating: parseFloat(average), reviews: proReviews };
+};
+
+export const getPosts = async (): Promise<Post[]> => {
+    const users = await getAllRegisteredUsers();
+    const registeredPros = users.filter(u => u.role === 'professionista');
+
+    if (registeredPros.length === 0 && !ENABLE_CLOUD) return SAMPLE_POSTS;
+    if (registeredPros.length === 0) return []; 
+
+    const realPosts: Post[] = await Promise.all(registeredPros.map(async pro => {
+        const stats = await getReviewStats(pro.name);
+        return {
+            id: pro.email,
+            category: pro.bio.includes('Idraulico') ? 'Idraulico' : 
+                      pro.bio.includes('Elettricista') ? 'Elettricista' : 'Tuttofare',
+            title: pro.bio || 'Professionista Disponibile',
+            image: `https://picsum.photos/400/300?random=${pro.name.length}`,
+            professional: {
+                name: pro.name,
+                avatar: pro.avatar || '',
+                city: pro.city || 'Italia',
+                distance: 'Disponibile',
+                responseTime: pro.availability || 'In giornata',
+                isVerified: pro.isVerified,
+                rating: stats.rating,
+                reviewsCount: stats.count
+            }
+        };
+    }));
+
+    return realPosts;
+};
+
+export const getTopPros = async (limit: number = 10): Promise<Post[]> => {
+    const posts = await getPosts();
+    return posts.sort((a, b) => {
+        const ratingA = a.professional.rating || 0;
+        const ratingB = b.professional.rating || 0;
+        if (ratingB !== ratingA) return ratingB - ratingA;
+        return (b.professional.reviewsCount || 0) - (a.professional.reviewsCount || 0);
+    }).slice(0, limit);
+}
+
+// --- REVIEWS ---
+
+export const addReview = async (proName: string, review: Review) => {
+    const reviewWithPro = { ...review, professionalName: proName };
+    await saveItem('bravo_reviews', KEYS.REVIEWS, reviewWithPro);
+};
+
+export const addReviewResponse = async (proName: string, reviewId: string, responseText: string) => {
+    const all = await fetchTable<Review>('bravo_reviews', KEYS.REVIEWS);
+    const target = all.find(r => r.id === reviewId);
+    if (target) {
+        target.response = responseText;
+        await saveItem('bravo_reviews', KEYS.REVIEWS, target);
+    }
+};
+
+export const canReview = async (clientName: string, proName: string): Promise<boolean> => {
+    const jobs = await fetchTable<Job>('bravo_jobs', KEYS.JOBS);
+    const job = jobs.find(j => 
+      j.clientName === clientName && 
+      j.professionalName === proName && 
+      j.status === 'completed' && 
+      !j.clientReviewed
+    );
+    return !!job;
+};
+
+export const markJobAsReviewed = async (clientName: string, proName: string) => {
+    const jobs = await fetchTable<Job>('bravo_jobs', KEYS.JOBS);
+    const job = jobs.find(j => 
+        j.clientName === clientName && 
+        j.professionalName === proName && 
+        j.status === 'completed' && 
+        !j.clientReviewed
+    );
+    if (job) {
+        job.clientReviewed = true;
+        await saveItem('bravo_jobs', KEYS.JOBS, job);
+    }
+};
+
+// --- JOBS ---
+
+export const getJobs = async (): Promise<Job[]> => {
+    return await fetchTable<Job>('bravo_jobs', KEYS.JOBS);
+};
+
+export const saveJob = async (job: Job) => {
+    return await saveItem('bravo_jobs', KEYS.JOBS, job);
+};
+
+export const setJobCompleted = async (jobId: string, role: Role, workReport?: string): Promise<{ job: Job, isFullyCompleted: boolean } | null> => {
+    const jobs = await getJobs();
+    const job = jobs.find(j => j.id === jobId);
+    
+    if (job) {
+        if (role === 'cliente') job.clientCompleted = true;
+        if (role === 'professionista') {
+            job.proCompleted = true;
+            if (workReport) job.workReport = workReport;
+        }
+
+        let isFullyCompleted = false;
+
+        if (job.clientCompleted && job.proCompleted && job.status !== 'completed') {
+            job.status = 'completed';
+            job.completedAt = new Date().toISOString();
+            isFullyCompleted = true;
+            
+            if (job.escrowStatus === 'held') {
+                job.escrowStatus = 'released';
+                const total = job.price;
+                const commission = total * COMMISSION_RATE;
+                const proEarning = total - commission;
+                job.commissionAmount = commission;
+
+                const users = await getAllRegisteredUsers();
+                const pro = users.find(u => u.name === job.professionalName);
+                if (pro) {
+                    pro.walletBalance = (pro.walletBalance || 0) + proEarning;
+                    await saveItem('bravo_users', KEYS.USERS_DB, pro, 'email');
+                }
+            }
+
+            if (job.requestId) {
+                const reqs = await getRequests();
+                const req = reqs.find(r => r.id === job.requestId);
+                if (req) {
+                    req.status = 'completed';
+                    await saveItem('bravo_requests', KEYS.REQUESTS, req);
+                }
             }
         }
-    } catch (e) {
-        setToast({msg: 'Errore critico di connessione.', type: 'error'});
-    } finally {
-        setIsSubmitting(false);
+
+        await saveItem('bravo_jobs', KEYS.JOBS, job);
+        return { job, isFullyCompleted };
     }
-  };
+    return null;
+}
 
-  if (!isClient) {
-      return (
-        <div className="p-6 pb-24 flex flex-col items-center justify-center h-full text-center">
-             <div className="bg-orange-100 p-4 rounded-full mb-4">
-                 <Briefcase className="w-8 h-8 text-orange-600" />
-             </div>
-             <h2 className="text-xl font-bold text-gray-900 mb-2">Sezione per i Clienti</h2>
-             <p className="text-gray-600 max-w-xs">
-                 Solo chi è registrato come <b>Cliente</b> può pubblicare richieste di lavoro.
-             </p>
-        </div>
-      );
-  }
+// --- CHATS ---
 
-  // --- DASHBOARD VIEW ---
-  if (mode === 'dashboard') {
-      return (
-        <div className="bg-gray-50 min-h-full pb-24">
-             <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
-                 <h2 className="text-xl font-bold text-gray-900">Le mie Richieste</h2>
-                 <div className="flex gap-2">
-                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
-                    <button 
-                        onClick={() => setMode('new')}
-                        className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100"
-                    >
-                        + Nuova
-                    </button>
-                 </div>
-             </div>
-             
-             <div className="p-4 space-y-4">
-                 {isLoading && myRequests.length === 0 && (
-                     <div className="text-center py-10"><RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500"/></div>
-                 )}
-                 
-                 {!isLoading && myRequests.length === 0 ? (
-                     <div className="text-center py-10 text-gray-400">
-                         <List className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                         <p>Non hai ancora pubblicato richieste.</p>
-                     </div>
-                 ) : (
-                     myRequests.map(req => {
-                         let statusColor = 'bg-blue-100 text-blue-800';
-                         let statusText = 'Aperta';
-                         if (req.status === 'in_progress') { statusColor = 'bg-orange-100 text-orange-800'; statusText = 'In Corso'; }
-                         if (req.status === 'completed') { statusColor = 'bg-green-100 text-green-800'; statusText = 'Completata'; }
+export const getChats = async (): Promise<ChatThread[]> => {
+    return await fetchTable<ChatThread>('bravo_chats', KEYS.CHATS);
+}
 
-                         return (
-                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${statusColor}`}>{statusText}</span>
-                                    <span className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleDateString()}</span>
-                                </div>
-                                <h3 className="font-bold text-gray-900">{req.title}</h3>
-                                <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" /> {req.location}
-                                </p>
-                                
-                                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-50 text-sm">
-                                    <div className="text-gray-600">
-                                        Budget: <span className="font-semibold text-gray-900">{req.budget}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-gray-600">
-                                        <Briefcase className="w-4 h-4" />
-                                        {req.status === 'open' 
-                                            ? `${req.candidates.length} candidati` 
-                                            : `Assegnato a ${req.assignedPro}`}
-                                    </div>
-                                </div>
-                            </div>
-                         );
-                     })
-                 )}
-             </div>
-        </div>
-      );
-  }
+export const saveChat = async (updatedChat: ChatThread) => {
+    await saveItem('bravo_chats', KEYS.CHATS, updatedChat);
+}
 
-  // --- NEW REQUEST FORM ---
-  return (
-    <div className="bg-gray-50 min-h-full pb-24">
-      <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-900">Nuova Richiesta</h2>
-            <button 
-            onClick={() => setMode('dashboard')}
-            className="text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200"
-            >
-                Le mie Richieste
-            </button>
-      </div>
+// --- REQUESTS ---
 
-      <div className="p-6">
-        <p className="text-gray-500 text-sm mb-6">
-            Descrivi di cosa hai bisogno e ricevi proposte dai professionisti.
-        </p>
-
-        <form onSubmit={handlePublish} className="space-y-4">
-            
-            <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-            <select 
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-                <option>Idraulico</option>
-                <option>Elettricista</option>
-                <option>Imbianchino</option>
-                <option>Muratore</option>
-                <option>Tuttofare</option>
-                <option>Giardiniere</option>
-            </select>
-            </div>
-
-            <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Titolo Annuncio</label>
-            <input 
-                type="text" 
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Es. Perdita acqua bagno"
-                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-            </div>
-
-            <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Zona / Città</label>
-            <div className="relative">
-                <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-                <input 
-                    type="text" 
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="Es. Milano Centro, Via Roma..."
-                    className="w-full pl-10 p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-            </div>
-            </div>
-
-            <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione Dettagliata</label>
-            <textarea 
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Spiega il problema, le misure, o il risultato desiderato..."
-                rows={4}
-                className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-            </div>
-
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Budget Previsto (Opzionale)</label>
-                <input 
-                    type="text" 
-                    value={budget}
-                    onChange={(e) => setBudget(e.target.value)}
-                    placeholder="Es. 100€ o 'Da valutare'"
-                    className="w-full p-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
-            </div>
-
-            <div className="p-4 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center gap-2 text-gray-400 cursor-pointer hover:bg-gray-50 transition-colors">
-                <ImageIcon className="w-5 h-5" />
-                <span className="text-sm">Aggiungi Foto (Simulato)</span>
-            </div>
-
-            <button 
-            type="submit" 
-            disabled={!title || !desc || !location || isSubmitting}
-            className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors mt-4
-                ${title && desc && location && !isSubmitting
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700' 
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
-            `}
-            >
-            {isSubmitting ? (
-                <span>Pubblicazione in corso...</span>
-            ) : (
-                <>
-                <PlusCircle className="w-5 h-5" />
-                Pubblica Richiesta
-                </>
-            )}
-            </button>
-        </form>
-
-        {toast && (
-            <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-xs py-3 px-4 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
-                {toast.type === 'error' ? <AlertTriangle className="w-5 h-5 min-w-[20px]" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />}
-                <span>{toast.msg}</span>
-            </div>
-        )}
-      </div>
-    </div>
-  );
+export const getRequests = async (): Promise<JobRequest[]> => {
+    const data = await fetchTable<JobRequest>('bravo_requests', KEYS.REQUESTS);
+    return data.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
+
+export const saveRequest = async (req: JobRequest): Promise<{success: boolean, error?: string}> => {
+    console.log("🚀 Saving Request to Cloud:", req);
+    const res = await saveItem('bravo_requests', KEYS.REQUESTS, req);
+    return res;
+};
+
+export const applyToRequest = async (requestId: string, proName: string) => {
+    const reqs = await getRequests();
+    const req = reqs.find(r => r.id === requestId);
+    if (req && req.status === 'open' && !req.candidates.includes(proName)) {
+        req.candidates.push(proName);
+        await saveItem('bravo_requests', KEYS.REQUESTS, req);
+        return true;
+    }
+    return false;
+};
+
+export const acceptProposal = async (requestId: string, proName: string, clientName: string, price: number) => {
+    const reqs = await getRequests();
+    const req = reqs.find(r => r.id === requestId);
+    if (req && req.status === 'open') {
+        req.status = 'in_progress';
+        req.assignedPro = proName;
+        await saveItem('bravo_requests', KEYS.REQUESTS, req);
+
+        const newJob: Job = {
+            id: `job_${Date.now()}`,
+            professionalName: proName,
+            clientName: clientName,
+            status: 'in_progress',
+            clientCompleted: false,
+            proCompleted: false,
+            clientReviewed: false,
+            createdAt: new Date().toISOString(),
+            requestId: requestId,
+            price: price,
+            escrowStatus: 'held',
+            commissionAmount: 0
+        };
+        await saveJob(newJob);
+        return newJob;
+    }
+    return null;
+};
+
+// --- ADMIN ---
+
+export const getDashboardStats = async () => {
+    const users = await getAllRegisteredUsers();
+    const jobs = await getJobs();
+    const allReviews = await fetchTable<Review>('bravo_reviews', KEYS.REVIEWS);
+    
+    const totalRevenue = jobs.reduce((acc, job) => acc + (job.commissionAmount || 0), 0);
+    const pendingVerifications = users.filter(u => u.verificationStatus === 'pending');
+
+    return {
+        usersCount: users.length,
+        prosCount: users.filter(u => u.role === 'professionista').length,
+        clientsCount: users.filter(u => u.role === 'cliente').length,
+        jobsCount: jobs.length,
+        reviewsCount: allReviews.length,
+        totalRevenue,
+        users,
+        pendingVerifications
+    }
+}
+
+export const approveVerification = async (email: string) => {
+    const users = await getAllRegisteredUsers();
+    const user = users.find(u => u.email === email);
+    if (user) {
+        user.verificationStatus = 'verified';
+        user.isVerified = true;
+        await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
+        return true;
+    }
+    return false;
+}
+
+export const requestVerification = async (email: string) => {
+    return true;
+}
+
+export const resetDatabase = async () => {
+    localStorage.clear();
+    window.location.reload();
+}
+
+export const isCloudConnected = () => ENABLE_CLOUD;
