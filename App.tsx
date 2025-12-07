@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User } from './types';
 import { getCurrentUser } from './services/storage';
@@ -153,7 +152,7 @@ const App: React.FC = () => {
             onClick={() => setActiveTab('publish')} 
           />
           <NavButton 
-            icon={<MessageCircle />}
+            icon={<MessageCircle />} 
             label="Chat" 
             isActive={activeTab === 'chats'} 
             onClick={() => setActiveTab('chats')} 
