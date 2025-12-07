@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, logoutUser, switchUserRole, requestVerification } from '../services/storage';
-import { LogOut, Save, User as UserIcon, RefreshCw, Camera, Wallet, Clock, BadgeCheck, FileText, Upload } from 'lucide-react';
+import { LogOut, Save, User as UserIcon, RefreshCw, Camera, Wallet, Clock, BadgeCheck, FileText, Upload, X, ArrowUpRight, History } from 'lucide-react';
 
 interface ProfileTabProps {
   currentUser: User;
@@ -13,6 +13,12 @@ interface ProfileTabProps {
 export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUser, onLogout }) => {
   const [formData, setFormData] = useState<User>(currentUser);
   const [message, setMessage] = useState('');
+  
+  // Modals
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [iban, setIban] = useState('');
 
   // Sync local state when prop changes (Fixes switch lag)
   useEffect(() => {
@@ -46,16 +52,77 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
 
   const handleVerificationRequest = () => {
       if (formData.verificationStatus !== 'none') return;
-      // Simulate upload
+      setMessage('Invio documenti in corso...');
       setTimeout(async () => {
           await requestVerification(formData.email);
           setFormData(prev => ({ ...prev, verificationStatus: 'pending' }));
           setMessage('Documenti inviati! In attesa di approvazione.');
-      }, 1000);
+      }, 1500);
+  }
+
+  const handleWithdrawSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if(!withdrawAmount || !iban) return;
+      // Mock withdrawal
+      setShowWithdrawModal(false);
+      setMessage('Richiesta di prelievo inviata ✅');
+      setTimeout(() => setMessage(''), 3000);
+      setWithdrawAmount('');
+      setIban('');
   }
 
   return (
-    <div className="bg-gray-50 min-h-full pb-24">
+    <div className="bg-gray-50 min-h-full pb-24 relative">
+      
+      {/* Withdraw Modal */}
+      {showWithdrawModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white w-full max-w-xs rounded-2xl p-6 relative">
+                  <button onClick={() => setShowWithdrawModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                      <Wallet className="w-6 h-6 text-green-600"/> Prelievo
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">Saldo prelevabile: € {formData.walletBalance?.toFixed(2)}</p>
+                  <form onSubmit={handleWithdrawSubmit} className="space-y-3">
+                      <div>
+                          <label className="text-xs font-bold text-gray-500">Importo (€)</label>
+                          <input type="number" required value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg font-bold text-lg" placeholder="0.00" />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500">IBAN</label>
+                          <input type="text" required value={iban} onChange={e=>setIban(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg uppercase" placeholder="IT00..." />
+                      </div>
+                      <button type="submit" className="w-full py-3 bg-green-600 text-white font-bold rounded-xl mt-2">Conferma Prelievo</button>
+                  </form>
+              </div>
+          </div>
+      )}
+
+      {/* History Modal */}
+      {showHistoryModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 relative max-h-[70vh] flex flex-col">
+                  <button onClick={() => setShowHistoryModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                      <History className="w-6 h-6 text-gray-700"/> Storico
+                  </h3>
+                  <div className="flex-1 overflow-y-auto space-y-3">
+                      {(formData.walletBalance || 0) > 0 ? (
+                          <div className="bg-green-50 p-3 rounded-lg border border-green-100 flex justify-between items-center">
+                              <div>
+                                  <p className="font-bold text-green-800 text-sm">Lavoro Completato</p>
+                                  <p className="text-xs text-green-600">Accredito Saldo</p>
+                              </div>
+                              <span className="font-bold text-green-700">+€ {(formData.walletBalance || 0).toFixed(2)}</span>
+                          </div>
+                      ) : (
+                          <p className="text-center text-gray-400 py-4 italic">Nessun movimento recente.</p>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Header with Switcher */}
       <div className="bg-white p-4 flex justify-end shadow-sm">
           <button 
@@ -101,8 +168,18 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
                 </div>
                 <div className="text-3xl font-bold">€ {formData.walletBalance?.toFixed(2)}</div>
                 <div className="mt-4 flex gap-2">
-                    <button className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors">Prelievo</button>
-                    <button className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors">Storico</button>
+                    <button 
+                        onClick={() => setShowWithdrawModal(true)}
+                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                        <ArrowUpRight className="w-4 h-4"/> Prelievo
+                    </button>
+                    <button 
+                        onClick={() => setShowHistoryModal(true)}
+                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                        <History className="w-4 h-4"/> Storico
+                    </button>
                 </div>
             </div>
         )}
@@ -206,4 +283,3 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
     </div>
   );
 };
- 
