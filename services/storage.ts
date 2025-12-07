@@ -87,12 +87,17 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
             }
 
             console.log(`☁️ Saving to ${tableName}:`, item);
-            const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item });
+            
+            // Try UPSERT which is more robust
+            const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField });
             
             if (error) {
-                console.error(`🔥 SUPABASE WRITE ERROR [${tableName}]:`, error.message, error.code);
-                if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' };
+                console.error(`🔥 SUPABASE WRITE ERROR [${tableName}]:`, error.message, error.code, error.details);
+                
+                if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; // RLS Error
                 if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
+                if (error.code === '23505') return { success: false, error: 'DUPLICATE' }; // Unique violation
+                
                 return { success: false, error: error.message };
             }
             return { success: true };
@@ -119,11 +124,12 @@ export const getAllRegisteredUsers = async (): Promise<User[]> => {
 
 export const registerUser = async (user: User): Promise<{ success: boolean; msg?: string }> => {
     if (ENABLE_CLOUD && supabase) {
-        // Check if user exists using MaybeSingle to avoid error if 0 rows
+        // Check if user exists
         const { data, error } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
         
-        if (error && error.code === '42P01') {
-            return { success: false, msg: 'TABLE_MISSING' };
+        if (error) {
+            if (error.code === '42P01') return { success: false, msg: 'TABLE_MISSING' };
+            // Ignore other read errors during registration check
         }
 
         if (data) {
@@ -144,7 +150,7 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
     if (!res.success) {
         if (res.error === 'PERMISSIONS_DENIED') return { success: false, msg: 'RLS_ERROR' };
         if (res.error === 'TABLE_MISSING') return { success: false, msg: 'TABLE_MISSING' };
-        return { success: false, msg: 'DB_ERROR' };
+        return { success: false, msg: `DB_ERROR: ${res.error}` };
     }
     return { success: true };
 }
@@ -167,6 +173,7 @@ export const getCurrentUser = (): User | null => {
 
 export const saveCurrentUser = async (user: User) => {
     localStorage.setItem(KEYS.USER, JSON.stringify(user));
+    // Also update in cloud to keep profile fresh
     await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
     window.dispatchEvent(new Event('storage'));
 };
@@ -357,10 +364,10 @@ export const getRequests = async (): Promise<JobRequest[]> => {
     return data.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
 
-export const saveRequest = async (req: JobRequest): Promise<boolean> => {
+export const saveRequest = async (req: JobRequest): Promise<{success: boolean, error?: string}> => {
     console.log("🚀 Saving Request to Cloud:", req);
     const res = await saveItem('bravo_requests', KEYS.REQUESTS, req);
-    return res.success;
+    return res;
 };
 
 export const applyToRequest = async (requestId: string, proName: string) => {
