@@ -1,9 +1,10 @@
+
 import { User, Job, Review, Post, ChatThread, JobRequest, Role } from '../types';
 import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
-// FIXED KEY: Removed the leading 'I' typo.
+// FIXED KEY: Correct anon key provided
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
 
 // Force Cloud mode if keys are present
@@ -14,7 +15,7 @@ if (ENABLE_CLOUD) {
     try {
         supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
             auth: { persistSession: true, autoRefreshToken: true },
-            db: { schema: 'public' }
+            db: { schema: 'public' },
         });
         console.log("✅ Supabase Client Initialized.");
     } catch (e) {
@@ -56,7 +57,6 @@ const SAMPLE_POSTS: Post[] = [
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Add a timestamp to prevent caching on Vercel edge network
             const { data, error } = await supabase.from(tableName).select('*').limit(100);
             
             if (error) {
