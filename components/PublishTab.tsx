@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -91,9 +91,9 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             }, 1500);
         } else {
             if (res.error === 'PERMISSIONS_DENIED') {
-                 setToast({msg: 'ERRORE RLS: Esegui lo script SQL "GRANT ALL" su Supabase.', type: 'error'});
+                 setToast({msg: 'ERRORE PERMESSI (RLS). Esegui SQL su Supabase.', type: 'error'});
             } else if (res.error === 'TABLE_MISSING') {
-                 setToast({msg: 'ERRORE TABELLE: Esegui lo script SQL "CREATE TABLE".', type: 'error'});
+                 setToast({msg: 'ERRORE: Tabelle Database non trovate.', type: 'error'});
             } else if (res.error === 'TIMEOUT_DB_SLOW') {
                  setToast({msg: 'TIMEOUT: Database lento. Riprova.', type: 'error'});
             } else {
@@ -103,7 +103,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     } catch (e) {
         setToast({msg: 'Errore di connessione imprevisto.', type: 'error'});
     } finally {
-        setIsSubmitting(false); // Ensures spinner stops
+        setIsSubmitting(false);
     }
   };
 
@@ -128,7 +128,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
              <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
                  <h2 className="text-xl font-bold text-gray-900">Le mie Richieste</h2>
                  <div className="flex gap-2">
-                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
+                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
                     <button 
                         onClick={() => setMode('new')}
                         className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100"
@@ -192,7 +192,10 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
       <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
             <h2 className="text-xl font-bold text-gray-900">Nuova Richiesta</h2>
             <button 
-            onClick={() => setMode('dashboard')}
+            onClick={() => {
+                if(!isSubmitting) setMode('dashboard');
+            }}
+            disabled={isSubmitting}
             className="text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200"
             >
                 Le mie Richieste
@@ -296,7 +299,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
         {toast && (
             <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-xs py-3 px-4 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
-                {toast.type === 'error' ? <AlertTriangle className="w-5 h-5 min-w-[20px]" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />}
+                {toast.type === 'error' ? <XCircle className="w-5 h-5 min-w-[20px]" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />}
                 <span>{toast.msg}</span>
             </div>
         )}
