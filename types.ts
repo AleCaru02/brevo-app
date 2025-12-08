@@ -10,6 +10,7 @@ export interface User {
   bio: string;
   avatar?: string;
   city?: string;
+  password?: string; // New: Password field
   
   // New MVP Features
   isVerified?: boolean; // Spunta blu
