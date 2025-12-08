@@ -89,13 +89,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     </div>
                 </div>
                 
-                {/* FIXED PADDING: pr-24 ensures the last item is visible */}
-                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-24 w-full">
+                {/* Fixed scroll container with extra padding/spacer */}
+                <div className="flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full items-center">
                     {CATEGORIES.map(cat => (
                         <button
                         key={cat}
                         onClick={() => setActiveCategory(cat)}
-                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
+                        className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
                             activeCategory === cat 
                             ? 'bg-green-600 text-white shadow-md shadow-green-200' 
                             : 'bg-white text-gray-600 border border-gray-200'
@@ -104,8 +104,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                         {cat}
                         </button>
                     ))}
-                    {/* Spacer to force scroll width */}
-                    <div className="w-8 flex-shrink-0"></div>
+                    {/* SPACER FOR SCROLL - Prevents last item cut-off */}
+                    <div className="w-12 h-1 flex-shrink-0"></div>
                 </div>
             </div>
 
@@ -228,13 +228,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
           </div>
         </div>
         
-        {/* FIXED PADDING: pr-24 ensures the last item is visible */}
-        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-24 w-full">
+        {/* Fixed scroll container with extra padding/spacer */}
+        <div className="flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full items-center">
           {CATEGORIES.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
+              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
                 activeCategory === cat 
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
                   : 'bg-white text-gray-600 border border-gray-200'
@@ -243,8 +243,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
               {cat}
             </button>
           ))}
-          {/* Spacer */}
-          <div className="w-8 flex-shrink-0"></div>
+          {/* SPACER FOR SCROLL - Prevents last item cut-off */}
+          <div className="w-12 h-1 flex-shrink-0"></div>
         </div>
       </div>
 
