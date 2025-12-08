@@ -1,9 +1,9 @@
-
 import { User, Job, Review, Post, ChatThread, JobRequest, Role } from '../types';
 import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
+// Correct key without initial typo
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
 
 // Force Cloud mode if keys are present
@@ -42,6 +42,7 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
+// Increased to 90 seconds to handle Supabase cold starts
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- HELPER FOR DB ACCESS ---
@@ -49,18 +50,19 @@ const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() 
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Reduced timeout to 15s for reads to feel snappier, rely on cache if fail
+            // Read timeout 20s
             const { data, error } = await Promise.race([
                 supabase.from(tableName).select('*').limit(200),
-                timeoutPromise(15000)
+                timeoutPromise(20000)
             ]) as any;
             
             if (error) {
-                console.warn(`⚠️ READ ERROR [${tableName}]: using empty/local fallback.`);
+                console.warn(`⚠️ READ ERROR [${tableName}]:`, error);
                 return [];
             }
             return data ? data.map((row: any) => row.payload) as T[] : [];
         } catch (e: any) {
+            console.warn(`⚠️ READ TIMEOUT [${tableName}]`);
             return [];
         }
     } else {
@@ -68,25 +70,27 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
     }
 }
 
-// SAVE ITEM WITH RETRY LOGIC
+// SAVE ITEM WITH AGGRESSIVE RETRY LOGIC
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     if (ENABLE_CLOUD && supabase) {
-        let retries = 1; // Reduced retries for speed
+        let retries = 3; // Retry 3 times
         
         while (retries >= 0) {
             try {
                 const id = (item as any)[idField];
                 if (!id) return { success: false, error: 'Missing ID' };
 
-                // Medium timeout for writes (30s)
+                // Long timeout for writes (90s) to allow database wake-up
                 const { error } = await Promise.race([
                     supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                    timeoutPromise(30000)
+                    timeoutPromise(90000) 
                 ]) as any;
                 
                 if (error) {
                     if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; 
                     if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
+                    // If error is not permission related, maybe network or temporary, so we retry
+                    console.warn(`Write error ${tableName}, retrying...`, error);
                     throw new Error(error.message);
                 }
                 
@@ -95,7 +99,9 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
                 if (retries === 0) {
                      return { success: false, error: e.message === 'TIMEOUT' ? 'TIMEOUT_DB_SLOW' : 'EXCEPTION' };
                 }
-                await new Promise(r => setTimeout(r, 1000));
+                console.log(`Retrying saveItem (${retries} left)...`);
+                // Wait 2 seconds before retry
+                await new Promise(r => setTimeout(r, 2000));
                 retries--;
             }
         }
@@ -148,16 +154,19 @@ export const loginUserByEmail = async (email: string, password?: string): Promis
         try {
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('*').eq('email', cleanEmail).maybeSingle(),
-                timeoutPromise(15000)
+                timeoutPromise(20000)
             ]) as any;
             
-            if (error) return { success: false, msg: 'Errore connessione.' };
+            if (error) return { success: false, msg: 'Errore connessione o utente non trovato.' };
             if (!data) return { success: false, msg: 'Utente non trovato.' };
             
             const user = data.payload as User;
             
-            if (password && user.password && user.password !== password) {
-                return { success: false, msg: 'Password errata.' };
+            // Password check if provided
+            if (password !== undefined) {
+                 if (user.password && user.password !== password) {
+                     return { success: false, msg: 'Password errata.' };
+                 }
             }
             
             return { success: true, user };
@@ -229,7 +238,6 @@ export const getPosts = async (): Promise<Post[]> => {
     if (registeredPros.length === 0) return SAMPLE_POSTS;
 
     const realPosts: Post[] = registeredPros.map(pro => {
-        // Mock review stats locally to speed up feed loading
         return {
             id: pro.email,
             category: pro.bio.includes('Idraulico') ? 'Idraulico' : 
@@ -243,7 +251,7 @@ export const getPosts = async (): Promise<Post[]> => {
                 distance: 'Disponibile',
                 responseTime: pro.availability || 'In giornata',
                 isVerified: pro.isVerified,
-                rating: 5.0, // Default for speed
+                rating: 5.0, 
                 reviewsCount: 0
             }
         };
