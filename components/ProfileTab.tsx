@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, logoutUser, switchUserRole, requestVerification } from '../services/storage';
@@ -20,7 +19,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [iban, setIban] = useState('');
 
-  // Sync local state when prop changes (Fixes switch lag)
+  // Sync local state when prop changes
   useEffect(() => {
     setFormData(currentUser);
   }, [currentUser]);
@@ -77,22 +76,22 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
       {/* Withdraw Modal */}
       {showWithdrawModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white w-full max-w-xs rounded-2xl p-6 relative">
-                  <button onClick={() => setShowWithdrawModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
+              <div className="bg-white w-full max-w-xs rounded-2xl p-6 relative shadow-2xl">
+                  <button onClick={() => setShowWithdrawModal(false)} className="absolute top-4 right-4 text-gray-400 p-2"><X className="w-5 h-5"/></button>
                   <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                       <Wallet className="w-6 h-6 text-green-600"/> Prelievo
                   </h3>
-                  <p className="text-sm text-gray-500 mb-4">Saldo prelevabile: € {formData.walletBalance?.toFixed(2)}</p>
+                  <p className="text-sm text-gray-500 mb-4">Saldo prelevabile: <b>€ {formData.walletBalance?.toFixed(2)}</b></p>
                   <form onSubmit={handleWithdrawSubmit} className="space-y-3">
                       <div>
-                          <label className="text-xs font-bold text-gray-500">Importo (€)</label>
-                          <input type="number" required value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg font-bold text-lg" placeholder="0.00" />
+                          <label className="text-xs font-bold text-gray-500 uppercase">Importo (€)</label>
+                          <input type="number" required value={withdrawAmount} onChange={e=>setWithdrawAmount(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl font-bold text-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="0.00" />
                       </div>
                       <div>
-                          <label className="text-xs font-bold text-gray-500">IBAN</label>
-                          <input type="text" required value={iban} onChange={e=>setIban(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg uppercase" placeholder="IT00..." />
+                          <label className="text-xs font-bold text-gray-500 uppercase">IBAN</label>
+                          <input type="text" required value={iban} onChange={e=>setIban(e.target.value)} className="w-full p-3 border border-gray-300 rounded-xl uppercase focus:ring-2 focus:ring-green-500 outline-none" placeholder="IT00..." />
                       </div>
-                      <button type="submit" className="w-full py-3 bg-green-600 text-white font-bold rounded-xl mt-2">Conferma Prelievo</button>
+                      <button type="submit" className="w-full py-3 bg-green-600 text-white font-bold rounded-xl mt-2 hover:bg-green-700 transition-colors shadow-md">Conferma Prelievo</button>
                   </form>
               </div>
           </div>
@@ -101,12 +100,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
       {/* History Modal */}
       {showHistoryModal && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-white w-full max-w-sm rounded-2xl p-6 relative max-h-[70vh] flex flex-col">
-                  <button onClick={() => setShowHistoryModal(false)} className="absolute top-4 right-4 text-gray-400"><X className="w-5 h-5"/></button>
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 relative max-h-[70vh] flex flex-col shadow-2xl">
+                  <button onClick={() => setShowHistoryModal(false)} className="absolute top-4 right-4 text-gray-400 p-2"><X className="w-5 h-5"/></button>
                   <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                       <History className="w-6 h-6 text-gray-700"/> Storico
                   </h3>
-                  <div className="flex-1 overflow-y-auto space-y-3">
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-2">
                       {(formData.walletBalance || 0) > 0 ? (
                           <div className="bg-green-50 p-3 rounded-lg border border-green-100 flex justify-between items-center">
                               <div>
@@ -127,7 +126,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
       <div className="bg-white p-4 flex justify-end shadow-sm">
           <button 
             onClick={handleSwitchRole}
-            className="flex items-center gap-2 text-xs font-bold bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200 transition-colors text-gray-700"
+            className="flex items-center gap-2 text-xs font-bold bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200 transition-colors text-gray-700 border border-gray-200"
           >
               <RefreshCw className="w-3 h-3" />
               Cambia in {currentUser.role === 'cliente' ? 'Professionista' : 'Cliente'}
@@ -159,24 +158,25 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
 
         {/* PRO ONLY: Wallet Section */}
         {formData.role === 'professionista' && (
-            <div className="bg-gradient-to-r from-gray-900 to-gray-800 text-white p-6 rounded-2xl shadow-lg mb-6">
-                <div className="flex justify-between items-center mb-2">
+            <div className="bg-gradient-to-r from-gray-900 to-gray-800 text-white p-6 rounded-2xl shadow-lg mb-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
+                <div className="flex justify-between items-center mb-2 relative z-10">
                     <span className="text-xs text-gray-400 font-bold uppercase tracking-wider flex items-center gap-2">
                         <Wallet className="w-4 h-4" /> Saldo Disponibile
                     </span>
                     <span className="text-[10px] bg-gray-700 px-2 py-0.5 rounded text-gray-300">Commissione 5% applicata</span>
                 </div>
-                <div className="text-3xl font-bold">€ {formData.walletBalance?.toFixed(2)}</div>
-                <div className="mt-4 flex gap-2">
+                <div className="text-3xl font-bold relative z-10">€ {formData.walletBalance?.toFixed(2)}</div>
+                <div className="mt-4 flex gap-2 relative z-10">
                     <button 
                         onClick={() => setShowWithdrawModal(true)}
-                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 backdrop-blur-sm"
                     >
                         <ArrowUpRight className="w-4 h-4"/> Prelievo
                     </button>
                     <button 
                         onClick={() => setShowHistoryModal(true)}
-                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 backdrop-blur-sm"
                     >
                         <History className="w-4 h-4"/> Storico
                     </button>
@@ -195,13 +195,13 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
                 <p className="text-xs text-gray-500 mb-3">Ottieni la spunta blu e aumenta la fiducia dei clienti caricando un documento.</p>
                 
                 {formData.verificationStatus === 'pending' ? (
-                    <div className="bg-yellow-50 text-yellow-700 px-3 py-2 rounded-lg text-xs font-bold text-center">
+                    <div className="bg-yellow-50 text-yellow-700 px-3 py-2 rounded-lg text-xs font-bold text-center border border-yellow-200">
                         In attesa di approvazione...
                     </div>
                 ) : (
                     <button 
                         onClick={handleVerificationRequest}
-                        className="w-full bg-orange-50 text-orange-600 border border-orange-200 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-orange-100"
+                        className="w-full bg-orange-50 text-orange-600 border border-orange-200 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-orange-100 transition-colors"
                     >
                         <Upload className="w-4 h-4" /> Carica Documento
                     </button>
@@ -209,7 +209,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
             </div>
         )}
 
-        <div className="bg-white p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="bg-white p-6 rounded-2xl shadow-sm space-y-4 border border-gray-50">
             <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
                 <UserIcon className="w-5 h-5 text-gray-500" />
                 Dati Personali
@@ -263,7 +263,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
         <div className="mt-6 space-y-3">
             <button 
             onClick={handleSave}
-            className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors shadow-lg shadow-gray-200"
+            className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors shadow-lg shadow-gray-200 active:scale-[0.98]"
             >
             <Save className="w-5 h-5" />
             Salva Modifiche
