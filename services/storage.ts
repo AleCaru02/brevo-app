@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
-// Correct key without initial typo
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
 
 // Force Cloud mode if keys are present
@@ -18,9 +17,19 @@ if (ENABLE_CLOUD) {
             db: { schema: 'public' },
         });
         console.log("✅ Supabase Client Initialized.");
+        // Try to wake up DB immediately
+        warmUpDatabase();
     } catch (e) {
         console.error("❌ Failed to init Supabase:", e);
     }
+}
+
+async function warmUpDatabase() {
+    if (!supabase) return;
+    try {
+        console.log("🔥 Warming up database...");
+        await supabase.from('bravo_users').select('email').limit(1);
+    } catch(e) {}
 }
 
 const KEYS = {
@@ -35,7 +44,7 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
-// Increased to 60s to handle Supabase "cold start" (pausing)
+// Increased to 90s to handle Supabase "cold start" (sleeping)
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- HELPER FOR DB ACCESS ---
@@ -43,10 +52,10 @@ const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() 
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Extended timeout to 45s for slower connections
+            // Extended timeout to 60s for slower connections
             const { data, error } = await Promise.race([
                 supabase.from(tableName).select('*').limit(100),
-                timeoutPromise(45000)
+                timeoutPromise(60000)
             ]) as any;
             
             if (error) {
@@ -66,7 +75,7 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
 // SAVE ITEM WITH RETRY LOGIC
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     if (ENABLE_CLOUD && supabase) {
-        let retries = 3; // Try 4 times total
+        let retries = 2; 
         
         while (retries >= 0) {
             try {
@@ -75,10 +84,10 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
 
                 console.log(`☁️ Saving to ${tableName}... (Attempts left: ${retries})`);
                 
-                // Huge timeout for writes (60s) to allow database wake-up
+                // Huge timeout for writes (90s) to allow database wake-up
                 const { error } = await Promise.race([
                     supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                    timeoutPromise(60000)
+                    timeoutPromise(90000)
                 ]) as any;
                 
                 if (error) {
@@ -97,8 +106,8 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
                      if (e.message === 'TIMEOUT') return { success: false, error: 'TIMEOUT_DB_SLOW' };
                      return { success: false, error: 'EXCEPTION' };
                 }
-                // Exponential backoff: 1s, 2s, 4s
-                await new Promise(r => setTimeout(r, 1000 * (4 - retries)));
+                // Backoff: 1s, 2s
+                await new Promise(r => setTimeout(r, 1500));
                 retries--;
             }
         }
@@ -154,7 +163,7 @@ export const loginUserByEmail = async (email: string, password?: string): Promis
         try {
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('*').eq('email', email).maybeSingle(),
-                timeoutPromise(45000)
+                timeoutPromise(60000)
             ]) as any;
             
             if (error) {
