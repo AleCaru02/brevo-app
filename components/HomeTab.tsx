@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Post, User, JobRequest } from '../types';
 import { getPosts, getRequests, applyToRequest, getTopPros } from '../services/storage';
-import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award, RefreshCcw, Filter } from 'lucide-react';
+import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award } from 'lucide-react';
 
 interface HomeTabProps {
   currentUser: User;
@@ -27,7 +27,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
         setSearchTerm(currentUser.city);
     }
     loadData(true);
-  }, [currentUser.role]); // Reload when role changes
+  }, [currentUser.role]); 
 
   const loadData = async (showLoading = false) => {
       if (showLoading) setIsLoading(true);
@@ -77,7 +77,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                 <div className="p-4 pb-2">
                     <div className="flex justify-between items-center mb-2">
                         <h2 className="text-lg font-bold text-gray-900">Richieste nella tua zona</h2>
-                        <button onClick={() => loadData(true)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><RefreshCcw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} /></button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
@@ -90,13 +89,14 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                         />
                     </div>
                 </div>
-                {/* Added pr-6 to fix cut-off items */}
-                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-6">
+                
+                {/* Fixed cut-off items with pr-16 */}
+                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-16">
                     {CATEGORIES.map(cat => (
                         <button
                         key={cat}
                         onClick={() => setActiveCategory(cat)}
-                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
                             activeCategory === cat 
                             ? 'bg-green-600 text-white shadow-md shadow-green-200' 
                             : 'bg-white text-gray-600 border border-gray-200'
@@ -215,10 +215,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
         <div className="p-4 pb-2">
           <div className="flex justify-between items-center mb-2">
              <h2 className="text-lg font-bold text-gray-900">Trova un professionista</h2>
-             {/* Removed persistent spinner, only shows when clicked/loading */}
-             <button onClick={() => loadData(true)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
-                 <RefreshCcw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
-             </button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
@@ -232,13 +228,13 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
           </div>
         </div>
         
-        {/* Added pr-6 to fix cut-off items */}
-        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-6">
+        {/* Fixed cut-off items with pr-16 */}
+        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-16">
           {CATEGORIES.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
                 activeCategory === cat 
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
                   : 'bg-white text-gray-600 border border-gray-200'
