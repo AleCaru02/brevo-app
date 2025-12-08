@@ -91,7 +91,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                 
                 {/* FIXED SCROLLING CONTAINER */}
                 <div className="w-full overflow-x-auto hide-scrollbar">
-                    <div className="flex px-4 pb-2 gap-2 min-w-max pr-24">
+                    <div className="flex px-4 pb-2 gap-2 min-w-max items-center">
                         {CATEGORIES.map(cat => (
                             <button
                             key={cat}
@@ -105,6 +105,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                             {cat}
                             </button>
                         ))}
+                        {/* SPACER FOR SCROLLING */}
+                        <div className="w-12 shrink-0"></div>
                     </div>
                 </div>
             </div>
@@ -230,7 +232,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
         
         {/* FIXED SCROLLING CONTAINER */}
         <div className="w-full overflow-x-auto hide-scrollbar">
-            <div className="flex px-4 pb-2 gap-2 min-w-max pr-24">
+            <div className="flex px-4 pb-2 gap-2 min-w-max items-center">
                 {CATEGORIES.map(cat => (
                     <button
                     key={cat}
@@ -244,6 +246,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     {cat}
                     </button>
                 ))}
+                 {/* SPACER FOR SCROLLING */}
+                 <div className="w-24 shrink-0"></div>
             </div>
         </div>
       </div>
