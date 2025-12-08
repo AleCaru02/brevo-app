@@ -36,24 +36,34 @@ const COMMISSION_RATE = 0.05;
 
 // --- HELPER FOR DB ACCESS ---
 
-async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
+async function fetchTable<T extends { id?: string, email?: string }>(tableName: string, localKey: string): Promise<T[]> {
     // 1. Try LocalStorage FIRST (Instant Load)
-    const localData = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const localRaw = localStorage.getItem(localKey);
+    let localData: T[] = localRaw ? JSON.parse(localRaw) : [];
     
     // 2. Trigger Background Refresh from Cloud (if enabled)
     if (ENABLE_CLOUD && supabase) {
-        // We don't await this to keep UI fast, but we update local storage for next time
         supabase.from(tableName).select('*').limit(500)
             .then(({ data, error }: any) => {
                 if (!error && data) {
-                    const cloudPayloads = data.map((row: any) => row.payload);
-                    localStorage.setItem(localKey, JSON.stringify(cloudPayloads));
-                    // Optional: Dispatch event to refresh UI if needed, but usually React handles state
+                    const cloudPayloads = data.map((row: any) => row.payload) as T[];
+                    
+                    // SMART MERGE: Keep local items that are NOT in cloud yet (unsynced)
+                    // This prevents disappearing items when cloud sync is slower than UI
+                    const cloudIds = new Set(cloudPayloads.map((i: any) => i.id || i.email));
+                    const unsyncedLocalItems = localData.filter((i: any) => {
+                        const id = i.id || i.email;
+                        return id && !cloudIds.has(id);
+                    });
+
+                    const mergedData = [...cloudPayloads, ...unsyncedLocalItems];
+                    
+                    localStorage.setItem(localKey, JSON.stringify(mergedData));
                 }
             });
     }
 
-    // 3. If local is empty but cloud is enabled, try to wait for cloud (Cold Start handling)
+    // 3. Cold Start handling (if local is empty, wait for cloud)
     if (localData.length === 0 && ENABLE_CLOUD && supabase) {
         try {
             const { data, error } = await supabase.from(tableName).select('*').limit(500);
@@ -67,7 +77,7 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
         }
     }
     
-    return localData as T[];
+    return localData;
 }
 
 // ULTRA-FAST SAVE (Optimistic)
@@ -89,18 +99,36 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
     // 2. BACKGROUND CLOUD SYNC (Fire & Forget)
     if (ENABLE_CLOUD && supabase) {
         // We do NOT await this. We let it run in background.
-        // If the DB is sleeping, it will wake up and save eventually.
-        // If it fails, the user at least has the data locally.
         supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField })
             .then(({ error }: any) => {
                 if (error) console.error(`Background Sync Error [${tableName}]:`, error);
-                else console.log(`Background Sync Success [${tableName}]`);
             })
             .catch((err: any) => console.error(`Background Sync Network Error:`, err));
     }
 
     // 3. Return SUCCESS Immediately
     return { success: true }; 
+}
+
+// DELETE ITEM
+async function deleteItem(tableName: string, localKey: string, id: string): Promise<void> {
+    // 1. Local Delete
+    try {
+        const list = JSON.parse(localStorage.getItem(localKey) || '[]');
+        const filtered = list.filter((x: any) => x.id !== id && x.email !== id);
+        localStorage.setItem(localKey, JSON.stringify(filtered));
+    } catch (e) {
+        console.error("LocalStorage Delete Error:", e);
+    }
+
+    // 2. Cloud Delete
+    if (ENABLE_CLOUD && supabase) {
+        // Assume ID field is either 'id' or 'email' based on table conventions in this app
+        const idColumn = tableName === 'bravo_users' ? 'email' : 'id';
+        supabase.from(tableName).delete().eq(idColumn, id).then(({ error }: any) => {
+             if (error) console.error("Cloud Delete Error", error);
+        });
+    }
 }
 
 // --- USERS ---
@@ -115,19 +143,10 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
     user.isVerified = false;
     user.walletBalance = 0;
 
-    // Check existence (This still needs to await to avoid duplicates, but we set a short timeout)
-    if (ENABLE_CLOUD && supabase) {
-        try {
-            const checkPromise = supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
-            // Race against a 2s timeout so registration doesn't hang
-            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 2000));
-            
-            const result: any = await Promise.race([checkPromise, timeoutPromise]);
-            
-            if (result !== 'TIMEOUT' && result.data) {
-                return { success: false, msg: 'EXISTS' };
-            }
-        } catch(e) {}
+    // Optimistic check (local only first)
+    const localUsers = JSON.parse(localStorage.getItem(KEYS.USERS_DB) || '[]');
+    if (localUsers.find((u: User) => u.email === user.email)) {
+         return { success: false, msg: 'EXISTS' };
     }
 
     await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
@@ -137,7 +156,7 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
 export const loginUserByEmail = async (email: string, password?: string): Promise<{ success: boolean, user?: User, msg?: string }> => {
     const cleanEmail = email.toLowerCase().trim();
     
-    // Try Local First for speed
+    // Try Local First
     const localUsers = JSON.parse(localStorage.getItem(KEYS.USERS_DB) || '[]');
     let user = localUsers.find((u: User) => u.email === cleanEmail);
 
@@ -372,6 +391,10 @@ export const getRequests = async (): Promise<JobRequest[]> => {
 
 export const saveRequest = async (req: JobRequest): Promise<{success: boolean, error?: string}> => {
     return await saveItem('bravo_requests', KEYS.REQUESTS, req);
+};
+
+export const deleteRequest = async (requestId: string): Promise<void> => {
+    await deleteItem('bravo_requests', KEYS.REQUESTS, requestId);
 };
 
 export const applyToRequest = async (requestId: string, proName: string) => {
