@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, loginUserByEmail, registerUser, isCloudConnected } from '../services/storage';
-import { MapPin, Lock, Chrome, Wifi, WifiOff } from 'lucide-react';
+import { MapPin, Lock, Chrome, Wifi, WifiOff, Eye, EyeOff } from 'lucide-react';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -14,6 +15,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
   const [isLoginMode, setIsLoginMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCloud, setIsCloud] = useState(isCloudConnected());
+  const [showPassword, setShowPassword] = useState(false);
   
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('cliente');
@@ -31,8 +33,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
 
     try {
         if (isLoginMode) {
-            if (!email) {
-                setError('Inserisci la tua email.');
+            if (!email || !password) {
+                setError('Inserisci email e password.');
                 setIsLoading(false);
                 return;
             }
@@ -42,16 +44,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 return;
             }
 
-            const foundUser = await loginUserByEmail(email);
-            if (foundUser) {
-                await saveCurrentUser(foundUser);
-                onLogin(foundUser);
+            const res = await loginUserByEmail(email, password);
+            if (res.success && res.user) {
+                await saveCurrentUser(res.user);
+                onLogin(res.user);
             } else {
-                setError('Utente non trovato. Controlla l\'email o registrati.');
+                setError(res.msg || 'Credenziali non valide.');
             }
 
         } else {
-            if (!name.trim() || !email.trim() || !phone.trim() || !city.trim()) {
+            if (!name.trim() || !email.trim() || !phone.trim() || !city.trim() || !password.trim()) {
                 setError('Inserisci tutti i campi obbligatori.');
                 setIsLoading(false);
                 return;
@@ -70,6 +72,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 email,
                 phone,
                 city,
+                password, // Saving plain for demo
                 bio: role === 'professionista' ? `Professionista operativo a ${city}` : `Cliente di ${city}`,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'cliente' ? '007AFF' : '10b981'}&color=fff`,
                 walletBalance: 0,
@@ -100,11 +103,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
       
       setTimeout(async () => {
         const mockEmail = `mario.google@gmail.com`;
-        const found = await loginUserByEmail(mockEmail);
+        const res = await loginUserByEmail(mockEmail);
         
-        if (found) {
-            await saveCurrentUser(found);
-            onLogin(found);
+        if (res.success && res.user) {
+            await saveCurrentUser(res.user);
+            onLogin(res.user);
         } else {
             const newUser: User = {
                 name: `Mario Google`,
@@ -119,12 +122,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 isVerified: true,
                 walletBalance: 0
             };
-            const res = await registerUser(newUser);
-            if (res.success || res.msg === 'EXISTS') {
+            const regRes = await registerUser(newUser);
+            if (regRes.success || regRes.msg === 'EXISTS') {
                 await saveCurrentUser(newUser);
                 onLogin(newUser);
             } else {
-                if (res.msg === 'TABLE_MISSING') setError('ERRORE: Tabelle mancanti su Supabase.');
+                if (regRes.msg === 'TABLE_MISSING') setError('ERRORE: Tabelle mancanti su Supabase.');
                 else setError('Errore login Google (Database non scrivibile).');
             }
         }
@@ -240,21 +243,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
             />
          </div>
 
-         {isLoginMode && (
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-                    <input
-                        type="password"
-                        className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                    />
-                </div>
-             </div>
-         )}
+         <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="relative">
+                <Lock className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
+                <input
+                    type={showPassword ? "text" : "password"}
+                    className="w-full pl-10 pr-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                />
+                <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3.5 text-gray-400"
+                >
+                    {showPassword ? <EyeOff className="w-5 h-5"/> : <Eye className="w-5 h-5"/>}
+                </button>
+            </div>
+         </div>
 
          {!isLoginMode && (
             <>
@@ -314,7 +322,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                     : (role === 'cliente' ? 'bg-blue-600 shadow-blue-200' : 'bg-green-600 shadow-green-200')
             } ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            {isLoading ? 'Caricamento...' : (isLoginMode ? 'Accedi a Bravo' : 'Registrati')}
+            {isLoading ? 'Caricamento...' : (isLoginMode ? 'Accedi e Ricordami' : 'Registrati')}
           </button>
         </form>
         
