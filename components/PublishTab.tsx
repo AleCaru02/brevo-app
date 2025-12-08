@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests, isCloudConnected } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, Loader2 } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -63,14 +63,10 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     }
 
     setIsSubmitting(true);
-    setToast({msg: 'Connessione al database in corso...', type: 'info'});
+    setToast({msg: 'Connessione al database... (potrebbe richiedere tempo)', type: 'info'});
 
-    // Timeout safety
-    const timeoutId = setTimeout(() => {
-        setIsSubmitting(false);
-        setToast({msg: 'TIMEOUT: Il database è lento a svegliarsi. Riprova tra poco.', type: 'error'});
-    }, 40000); 
-
+    // NOTA: Non usiamo più un setTimeout qui. Ci affidiamo a saveRequest che ha un timeout interno di 90s.
+    
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
         clientId: currentUser.email,
@@ -89,7 +85,6 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
     try {
         const res = await saveRequest(newRequest);
-        clearTimeout(timeoutId); // Clear timeout if successful
         
         if (res.success) {
             setToast({msg: 'Richiesta pubblicata!', type: 'success'});
@@ -108,13 +103,12 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             } else if (res.error === 'TABLE_MISSING') {
                  setToast({msg: 'ERRORE: Tabelle Database non trovate.', type: 'error'});
             } else if (res.error === 'TIMEOUT_DB_SLOW') {
-                 setToast({msg: 'TIMEOUT: Il database si sta svegliando. Riprova!', type: 'error'});
+                 setToast({msg: 'Il database è ancora in fase di avvio. Riprova tra 30 secondi.', type: 'error'});
             } else {
-                 setToast({msg: `Errore Database: ${res.error}`, type: 'error'});
+                 setToast({msg: `Errore: ${res.error}`, type: 'error'});
             }
         }
     } catch (e) {
-        clearTimeout(timeoutId);
         setToast({msg: 'Errore di connessione imprevisto.', type: 'error'});
     } finally {
         setIsSubmitting(false);
@@ -245,6 +239,10 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                 <option>Muratore</option>
                 <option>Tuttofare</option>
                 <option>Giardiniere</option>
+                <option>Fabbro</option>
+                <option>Meccanico</option>
+                <option>Fotografo</option>
+                <option>Video Maker</option>
             </select>
             </div>
 
@@ -310,7 +308,10 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             `}
             >
             {isSubmitting ? (
-                <span>Caricamento...</span>
+                <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Pubblicazione in corso...</span>
+                </>
             ) : (
                 <>
                 <PlusCircle className="w-5 h-5" />
@@ -322,7 +323,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
         {toast && (
             <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-xs py-3 px-4 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : (toast.type === 'info' ? 'bg-blue-600' : 'bg-green-600')}`}>
-                {toast.type === 'error' ? <XCircle className="w-5 h-5 min-w-[20px]" /> : (toast.type === 'info' ? <RefreshCw className="w-5 h-5 min-w-[20px] animate-spin" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />)}
+                {toast.type === 'error' ? <XCircle className="w-5 h-5 min-w-[20px]" /> : (toast.type === 'info' ? <Loader2 className="w-5 h-5 min-w-[20px] animate-spin" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />)}
                 <span>{toast.msg}</span>
             </div>
         )}
