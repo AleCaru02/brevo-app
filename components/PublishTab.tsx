@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests, isCloudConnected } from '../services/storage';
@@ -68,7 +67,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     }
 
     setIsSubmitting(true);
-    setToast({msg: 'Pubblicazione in corso...', type: 'info'});
+    setToast({msg: 'Pubblicazione in corso... (Il database potrebbe essere lento a svegliarsi)', type: 'info'});
     
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
@@ -87,6 +86,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     };
 
     try {
+        // Use the robust saveRequest with retries
         const res = await saveRequest(newRequest);
         
         if (res.success) {
@@ -96,20 +96,20 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             setBudget('');
             setLocation('');
             
-            // OPTIMISTIC UPDATE: Add immediately to local list
+            // OPTIMISTIC UPDATE: Add immediately to local list so user sees it
             setMyRequests(prev => [newRequest, ...prev]);
             
             setTimeout(() => {
                 setToast(null);
                 setMode('dashboard'); 
-            }, 1000);
+            }, 1500);
         } else {
             if (res.error === 'PERMISSIONS_DENIED') {
                  setToast({msg: 'ERRORE PERMESSI (RLS). Esegui SQL su Supabase.', type: 'error'});
             } else if (res.error === 'TABLE_MISSING') {
                  setToast({msg: 'ERRORE: Tabelle Database non trovate.', type: 'error'});
             } else if (res.error === 'TIMEOUT_DB_SLOW') {
-                 setToast({msg: 'Il database è lento. Riprova tra poco.', type: 'error'});
+                 setToast({msg: 'Il database è troppo lento. Riprova ora.', type: 'error'});
             } else {
                  setToast({msg: `Errore: ${res.error}`, type: 'error'});
             }
@@ -316,7 +316,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             {isSubmitting ? (
                 <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Pubblicazione in corso...</span>
+                <span>Pubblicazione...</span>
                 </>
             ) : (
                 <>
