@@ -35,7 +35,7 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
-// Se il DB non risponde in 5 secondi, sblocca l'interfaccia
+// Aumentato a 20 secondi per connessioni lente
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- Mock Data Fallback ---
@@ -61,10 +61,10 @@ const SAMPLE_POSTS: Post[] = [
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Race condition: if fetch takes > 5s, timeout
+            // Race condition: if fetch takes > 20s, timeout
             const { data, error } = await Promise.race([
                 supabase.from(tableName).select('*').limit(100),
-                timeoutPromise(5000)
+                timeoutPromise(20000)
             ]) as any;
             
             if (error) {
@@ -89,10 +89,10 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
 
             console.log(`☁️ Saving to ${tableName}...`);
             
-            // Race condition: if save takes > 5s, throw error so UI unblocks
+            // Race condition: if save takes > 20s, throw error so UI unblocks
             const { error } = await Promise.race([
                 supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                timeoutPromise(5000)
+                timeoutPromise(20000)
             ]) as any;
             
             if (error) {
@@ -130,7 +130,7 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
             // Check existence with timeout
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle(),
-                timeoutPromise(5000)
+                timeoutPromise(20000)
             ]) as any;
             
             if (error) {
@@ -166,7 +166,7 @@ export const loginUserByEmail = async (email: string): Promise<User | null> => {
         try {
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('*').eq('email', email).maybeSingle(),
-                timeoutPromise(5000)
+                timeoutPromise(20000)
             ]) as any;
             
             if (error) console.error("Login Error:", error.message);
