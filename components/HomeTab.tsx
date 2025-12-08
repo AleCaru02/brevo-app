@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Post, User, JobRequest } from '../types';
 import { getPosts, getRequests, applyToRequest, getTopPros } from '../services/storage';
-import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award } from 'lucide-react';
+import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award, Filter } from 'lucide-react';
 
 interface HomeTabProps {
   currentUser: User;
@@ -47,7 +47,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
       }
   }
 
-  // --- PRO VIEW ---
+  // --- PRO VIEW (Vede le Richieste) ---
   if (currentUser.role === 'professionista') {
     const filteredRequests = requests.filter(req => {
         const term = searchTerm.toLowerCase();
@@ -61,20 +61,19 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
     const handleCandidate = async (req: JobRequest) => {
         if (req.status !== 'open') return;
         
-        setIsLoading(true);
         const alreadyApplied = req.candidates.includes(currentUser.name);
         if (!alreadyApplied) {
+            // Optimistic UI update
             await applyToRequest(req.id, currentUser.name);
-            await loadData();
+            loadData(false); // Reload quietly
         }
-        setIsLoading(false);
         onOpenChat(req.clientName, req.clientAvatar, req.id);
     };
 
     return (
         <div className="bg-gray-50 min-h-full pb-20">
-             <div className="sticky top-0 bg-white z-10 shadow-sm pb-2">
-                <div className="p-4 pb-2">
+             <div className="sticky top-0 bg-white z-10 shadow-sm pb-2 pt-2">
+                <div className="px-4 pb-2">
                     <div className="flex justify-between items-center mb-2">
                         <h2 className="text-lg font-bold text-gray-900">Richieste nella tua zona</h2>
                     </div>
@@ -90,8 +89,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     </div>
                 </div>
                 
-                {/* Fixed cut-off items with pr-16 */}
-                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-16">
+                {/* FIXED PADDING: pr-24 ensures the last item is visible */}
+                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-24 w-full">
                     {CATEGORIES.map(cat => (
                         <button
                         key={cat}
@@ -105,6 +104,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                         {cat}
                         </button>
                     ))}
+                    {/* Spacer to force scroll width */}
+                    <div className="w-8 flex-shrink-0"></div>
                 </div>
             </div>
 
@@ -166,7 +167,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                             ) : (
                                 <button 
                                     onClick={() => handleCandidate(req)}
-                                    disabled={isLoading}
                                     className={`w-full py-2 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors
                                         ${amICandidate 
                                             ? 'bg-blue-50 text-blue-600 border border-blue-200' 
@@ -194,7 +194,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
     );
   }
 
-  // --- CLIENT VIEW ---
+  // --- CLIENT VIEW (Vede i Professionisti) ---
   
   const filteredPosts = posts.filter(post => {
     const term = searchTerm.toLowerCase();
@@ -211,8 +211,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
 
   return (
     <div className="bg-gray-50 min-h-full pb-20">
-      <div className="sticky top-0 bg-white z-10 shadow-sm pb-2">
-        <div className="p-4 pb-2">
+      <div className="sticky top-0 bg-white z-10 shadow-sm pb-2 pt-2">
+        <div className="px-4 pb-2">
           <div className="flex justify-between items-center mb-2">
              <h2 className="text-lg font-bold text-gray-900">Trova un professionista</h2>
           </div>
@@ -228,8 +228,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
           </div>
         </div>
         
-        {/* Fixed cut-off items with pr-16 */}
-        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-16">
+        {/* FIXED PADDING: pr-24 ensures the last item is visible */}
+        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-24 w-full">
           {CATEGORIES.map(cat => (
             <button
               key={cat}
@@ -243,13 +243,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
               {cat}
             </button>
           ))}
+          {/* Spacer */}
+          <div className="w-8 flex-shrink-0"></div>
         </div>
       </div>
 
       <div className="p-4 space-y-6">
         
         {/* LEADERBOARD SECTION */}
-        {activeCategory === 'Tutti' && !searchTerm && (
+        {activeCategory === 'Tutti' && !searchTerm && topPros.length > 0 && (
             <div className="mb-2">
                 <h3 className="text-md font-bold text-gray-900 mb-3 flex items-center gap-2">
                     <Award className="w-5 h-5 text-yellow-500" />
@@ -292,9 +294,9 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
             )}
             
             <div className="space-y-4">
-                {isLoading && filteredPosts.length === 0 && <div className="text-center py-4">Caricamento...</div>}
-
-                {!isLoading && filteredPosts.length > 0 ? (
+                {/* No loading spinner here, just content or empty state */}
+                
+                {filteredPosts.length > 0 ? (
                 filteredPosts.map(post => (
                     <div key={post.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
                     <div className="h-48 overflow-hidden relative">
@@ -354,13 +356,15 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     </div>
                 ))
                 ) : (
-                    <div className="text-center py-12 text-gray-400">
-                         <div className="bg-gray-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3">
-                            <Search className="w-8 h-8 opacity-40" />
-                         </div>
-                        <p>Nessun professionista trovato.</p>
-                        <button onClick={() => {setSearchTerm(''); setActiveCategory('Tutti');}} className="text-blue-600 font-bold text-sm mt-2">Resetta filtri</button>
-                    </div>
+                    !isLoading && (
+                        <div className="text-center py-12 text-gray-400">
+                            <div className="bg-gray-100 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3">
+                                <Search className="w-8 h-8 opacity-40" />
+                            </div>
+                            <p>Nessun professionista trovato.</p>
+                            <button onClick={() => {setSearchTerm(''); setActiveCategory('Tutti');}} className="text-blue-600 font-bold text-sm mt-2">Resetta filtri</button>
+                        </div>
+                    )
                 )}
             </div>
         </div>
