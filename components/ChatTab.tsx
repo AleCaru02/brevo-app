@@ -394,7 +394,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
                     : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
                 }`}>
                 {msg.text}
-                <div className={`text-[10px] mt-1 text-right ${msg.fromMe ? 'text-blue-200' : 'text-gray-400'}`}>
+                <div className={`text-[10px] mt-1 text-right ${msg.fromMe ? 'text-blue-200' : 'text-gray-400'}`}> 
                     {msg.timestamp}
                 </div>
                 </div>
