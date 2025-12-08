@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, logoutUser, switchUserRole, requestVerification } from '../services/storage';
-import { LogOut, Save, User as UserIcon, RefreshCw, Camera, Wallet, Clock, BadgeCheck, FileText, Upload, X, ArrowUpRight, History } from 'lucide-react';
+import { LogOut, Save, User as UserIcon, RefreshCw, Camera, Wallet, Clock, BadgeCheck, FileText, Upload, X, ArrowUpRight, History, Edit2 } from 'lucide-react';
 
 interface ProfileTabProps {
   currentUser: User;
@@ -135,9 +136,15 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
 
       <div className="p-6">
         <div className="flex flex-col items-center mb-8">
-            <div className="relative group">
+            <div className="relative group cursor-pointer" onClick={() => {
+                const url = prompt("Inserisci URL nuova foto:", formData.avatar);
+                if(url) handleChange('avatar', url);
+            }}>
                 <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-md">
                     <img src={formData.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                </div>
+                <div className="absolute bottom-0 right-0 bg-white p-1.5 rounded-full shadow-sm border border-gray-200">
+                    <Camera className="w-4 h-4 text-gray-600" />
                 </div>
             </div>
             
@@ -216,13 +223,42 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ currentUser, onUpdateUse
             </h3>
             
             <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase">Nome</label>
+            <label className="text-xs font-semibold text-gray-500 uppercase flex items-center justify-between">
+                Nome
+                <Edit2 className="w-3 h-3 text-gray-400"/>
+            </label>
             <input 
                 type="text" 
                 value={formData.name}
                 onChange={(e) => handleChange('name', e.target.value)}
                 className="w-full border-b border-gray-200 py-2 focus:outline-none focus:border-blue-500 transition-colors bg-transparent"
             />
+            </div>
+            
+            <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase flex items-center justify-between">
+                    Email (Privato)
+                    <Edit2 className="w-3 h-3 text-gray-400"/>
+                </label>
+                <input 
+                    type="email" 
+                    value={formData.email}
+                    onChange={(e) => handleChange('email', e.target.value)}
+                    className="w-full border-b border-gray-200 py-2 focus:outline-none focus:border-blue-500 transition-colors bg-transparent"
+                />
+            </div>
+
+            <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase flex items-center justify-between">
+                    Telefono (Privato)
+                    <Edit2 className="w-3 h-3 text-gray-400"/>
+                </label>
+                <input 
+                    type="tel" 
+                    value={formData.phone}
+                    onChange={(e) => handleChange('phone', e.target.value)}
+                    className="w-full border-b border-gray-200 py-2 focus:outline-none focus:border-blue-500 transition-colors bg-transparent"
+                />
             </div>
 
             {formData.role === 'professionista' && (
