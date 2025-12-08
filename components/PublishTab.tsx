@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
-import { saveRequest, getRequests, isCloudConnected } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, Loader2 } from 'lucide-react';
+import { saveRequest, getRequests, deleteRequest, isCloudConnected } from '../services/storage';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, Loader2, Trash2 } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -92,6 +92,13 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     }, 1000);
   };
 
+  const handleDelete = async (id: string) => {
+      if (confirm('Sei sicuro di voler eliminare questa richiesta?')) {
+          await deleteRequest(id);
+          setMyRequests(prev => prev.filter(r => r.id !== id));
+      }
+  }
+
   if (!isClient) {
       return (
         <div className="p-6 pb-24 flex flex-col items-center justify-center h-full text-center">
@@ -137,7 +144,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                          if (req.status === 'completed') { statusColor = 'bg-green-100 text-green-800'; statusText = 'Completata'; }
 
                          return (
-                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                                 <div className="flex justify-between items-start mb-2">
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${statusColor}`}>{statusText}</span>
                                     <span className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleDateString()}</span>
@@ -158,6 +165,15 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                                             : `Assegnato a ${req.assignedPro}`}
                                     </div>
                                 </div>
+                                
+                                {req.status === 'open' && (
+                                    <button 
+                                        onClick={() => handleDelete(req.id)}
+                                        className="absolute top-4 right-4 text-gray-400 hover:text-red-500 p-1"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
                          );
                      })
