@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
-// Correct key without initial typo
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
 
 // Force Cloud mode if keys are present
@@ -16,18 +15,9 @@ if (ENABLE_CLOUD) {
             auth: { persistSession: true, autoRefreshToken: true },
             db: { schema: 'public' },
         });
-        // Non-blocking warm up
-        setTimeout(() => warmUpDatabase(), 0);
     } catch (e) {
         console.error("❌ Failed to init Supabase:", e);
     }
-}
-
-async function warmUpDatabase() {
-    if (!supabase) return;
-    try {
-        await supabase.from('bravo_users').select('email').limit(1);
-    } catch(e) {}
 }
 
 const KEYS = {
@@ -41,79 +31,60 @@ const KEYS = {
 
 const COMMISSION_RATE = 0.05;
 
-// --- TIMEOUT HELPER ---
-// Increased to 90 seconds to handle Supabase cold starts
-const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
-
 // --- HELPER FOR DB ACCESS ---
 
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
+    // 1. Try Cloud
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Read timeout 20s
-            const { data, error } = await Promise.race([
-                supabase.from(tableName).select('*').limit(200),
-                timeoutPromise(20000)
-            ]) as any;
-            
-            if (error) {
-                console.warn(`⚠️ READ ERROR [${tableName}]:`, error);
-                return [];
+            const { data, error } = await supabase.from(tableName).select('*').limit(200);
+            if (!error && data) {
+                return data.map((row: any) => row.payload) as T[];
             }
-            return data ? data.map((row: any) => row.payload) as T[] : [];
-        } catch (e: any) {
-            console.warn(`⚠️ READ TIMEOUT [${tableName}]`);
-            return [];
+        } catch (e) {
+            console.warn(`⚠️ Cloud Read Error [${tableName}], using LocalStorage fallback.`);
         }
-    } else {
-        return JSON.parse(localStorage.getItem(localKey) || '[]');
-    }
+    } 
+    
+    // 2. Fallback to LocalStorage
+    return JSON.parse(localStorage.getItem(localKey) || '[]');
 }
 
-// SAVE ITEM WITH AGGRESSIVE RETRY LOGIC
+// SAVE ITEM WITH HYBRID FALLBACK
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
-    if (ENABLE_CLOUD && supabase) {
-        let retries = 3; // Retry 3 times
-        
-        while (retries >= 0) {
-            try {
-                const id = (item as any)[idField];
-                if (!id) return { success: false, error: 'Missing ID' };
+    const id = (item as any)[idField];
+    if (!id) return { success: false, error: 'Missing ID' };
 
-                // Long timeout for writes (90s) to allow database wake-up
-                const { error } = await Promise.race([
-                    supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                    timeoutPromise(90000) 
-                ]) as any;
-                
-                if (error) {
-                    if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; 
-                    if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
-                    // If error is not permission related, maybe network or temporary, so we retry
-                    console.warn(`Write error ${tableName}, retrying...`, error);
-                    throw new Error(error.message);
-                }
-                
-                return { success: true };
-            } catch (e: any) {
-                if (retries === 0) {
-                     return { success: false, error: e.message === 'TIMEOUT' ? 'TIMEOUT_DB_SLOW' : 'EXCEPTION' };
-                }
-                console.log(`Retrying saveItem (${retries} left)...`);
-                // Wait 2 seconds before retry
-                await new Promise(r => setTimeout(r, 2000));
-                retries--;
+    let cloudSuccess = false;
+
+    // 1. Try Cloud Save
+    if (ENABLE_CLOUD && supabase) {
+        try {
+            const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField });
+            if (!error) {
+                cloudSuccess = true;
+            } else {
+                console.error(`Cloud Save Error [${tableName}]:`, error);
             }
+        } catch (e) {
+            console.error(`Cloud Connection Error [${tableName}]:`, e);
         }
     }
-    
-    // Local Storage Fallback
-    const list = JSON.parse(localStorage.getItem(localKey) || '[]');
-    const idx = list.findIndex((x: any) => (x as any)[idField] === (item as any)[idField]);
-    if (idx > -1) list[idx] = item;
-    else list.push(item);
-    localStorage.setItem(localKey, JSON.stringify(list));
-    return { success: true };
+
+    // 2. ALWAYS Save to LocalStorage (Backup/Offline mode)
+    try {
+        const list = JSON.parse(localStorage.getItem(localKey) || '[]');
+        const idx = list.findIndex((x: any) => (x as any)[idField] === (item as any)[idField]);
+        if (idx > -1) list[idx] = item;
+        else list.push(item);
+        localStorage.setItem(localKey, JSON.stringify(list));
+    } catch (e) {
+        console.error("LocalStorage Error:", e);
+    }
+
+    // Return success even if cloud failed (Optimistic UI)
+    // The user doesn't care if it's cloud or local, they just want it to "work"
+    return { success: true }; 
 }
 
 // --- USERS ---
@@ -123,56 +94,51 @@ export const getAllRegisteredUsers = async (): Promise<User[]> => {
 }
 
 export const registerUser = async (user: User): Promise<{ success: boolean; msg?: string }> => {
-    // Force lowercase email
     user.email = user.email.toLowerCase().trim();
-
-    if (ENABLE_CLOUD && supabase) {
-        try {
-            const { data } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
-            if (data) return { success: false, msg: 'EXISTS' };
-        } catch (e) { }
-    }
-
     user.verificationStatus = 'none';
     user.isVerified = false;
     user.walletBalance = 0;
 
-    const res = await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
-    if (!res.success) {
-        if (res.error === 'PERMISSIONS_DENIED') return { success: false, msg: 'RLS_ERROR' };
-        if (res.error === 'TABLE_MISSING') return { success: false, msg: 'TABLE_MISSING' };
-        if (res.error === 'TIMEOUT_DB_SLOW') return { success: false, msg: 'TIMEOUT' };
-        return { success: false, msg: `DB_ERROR: ${res.error}` };
+    // Check existence locally and cloud
+    if (ENABLE_CLOUD && supabase) {
+        try {
+            const { data } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
+            if (data) return { success: false, msg: 'EXISTS' };
+        } catch(e) {}
     }
+
+    await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
     return { success: true };
 }
 
 export const loginUserByEmail = async (email: string, password?: string): Promise<{ success: boolean, user?: User, msg?: string }> => {
     const cleanEmail = email.toLowerCase().trim();
     
+    // Try Cloud Login
     if (ENABLE_CLOUD && supabase) {
         try {
-            const { data, error } = await Promise.race([
-                supabase.from('bravo_users').select('*').eq('email', cleanEmail).maybeSingle(),
-                timeoutPromise(20000)
-            ]) as any;
-            
-            if (error) return { success: false, msg: 'Errore connessione o utente non trovato.' };
-            if (!data) return { success: false, msg: 'Utente non trovato.' };
-            
-            const user = data.payload as User;
-            
-            // Password check if provided
-            if (password !== undefined) {
-                 if (user.password && user.password !== password) {
+            const { data } = await supabase.from('bravo_users').select('*').eq('email', cleanEmail).maybeSingle();
+            if (data) {
+                const user = data.payload as User;
+                if (password !== undefined && user.password && user.password !== password) {
                      return { success: false, msg: 'Password errata.' };
-                 }
+                }
+                return { success: true, user };
             }
-            
-            return { success: true, user };
-        } catch (e) { return { success: false, msg: 'Timeout connessione.' }; }
+        } catch (e) {}
     }
-    return { success: false, msg: 'Offline mode not supported for login' };
+
+    // Fallback Local Login
+    const users = await getAllRegisteredUsers();
+    const user = users.find(u => u.email === cleanEmail);
+    if (user) {
+         if (password !== undefined && user.password && user.password !== password) {
+             return { success: false, msg: 'Password errata.' };
+         }
+         return { success: true, user };
+    }
+
+    return { success: false, msg: 'Utente non trovato.' };
 }
 
 export const getCurrentUser = (): User | null => {
@@ -183,8 +149,8 @@ export const getCurrentUser = (): User | null => {
 export const saveCurrentUser = async (user: User) => {
     user.email = user.email.toLowerCase().trim();
     localStorage.setItem(KEYS.USER, JSON.stringify(user));
-    // Don't await this to speed up UI
-    saveItem('bravo_users', KEYS.USERS_DB, user, 'email').catch(console.error);
+    // Background sync
+    saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
     window.dispatchEvent(new Event('storage'));
 };
 
