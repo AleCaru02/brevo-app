@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
-import { saveRequest, getRequests } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { saveRequest, getRequests, isCloudConnected } from '../services/storage';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -22,6 +22,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const [category, setCategory] = useState('Idraulico');
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState(true);
 
   // Dashboard Data
   const [myRequests, setMyRequests] = useState<JobRequest[]>([]);
@@ -30,6 +31,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const isClient = currentUser.role === 'cliente';
 
   useEffect(() => {
+    setCloudStatus(isCloudConnected());
     if (isClient) {
         loadMyRequests();
     }
@@ -50,6 +52,10 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isClient) return;
+    if (!cloudStatus) {
+        setToast({msg: 'Database Offline. Impossibile pubblicare.', type: 'error'});
+        return;
+    }
 
     if (!title || !desc || !location) {
         setToast({msg: 'Compila titolo, descrizione e zona.', type: 'error'});
@@ -58,6 +64,12 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
     setIsSubmitting(true);
     setToast(null);
+
+    // Timeout safety
+    const timeoutId = setTimeout(() => {
+        setIsSubmitting(false);
+        setToast({msg: 'TIMEOUT: Il database non risponde. Riprova più tardi.', type: 'error'});
+    }, 32000); 
 
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
@@ -77,6 +89,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
     try {
         const res = await saveRequest(newRequest);
+        clearTimeout(timeoutId); // Clear timeout if successful
         
         if (res.success) {
             setToast({msg: 'Richiesta pubblicata!', type: 'success'});
@@ -101,6 +114,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             }
         }
     } catch (e) {
+        clearTimeout(timeoutId);
         setToast({msg: 'Errore di connessione imprevisto.', type: 'error'});
     } finally {
         setIsSubmitting(false);
@@ -207,6 +221,15 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             Descrivi di cosa hai bisogno e ricevi proposte dai professionisti.
         </p>
 
+        {!cloudStatus && (
+            <div className="bg-red-50 p-4 rounded-xl border border-red-200 mb-4 flex items-center gap-3">
+                <WifiOff className="w-6 h-6 text-red-500" />
+                <div className="text-sm text-red-700">
+                    <b>Database Offline</b><br/>Impossibile pubblicare richieste al momento.
+                </div>
+            </div>
+        )}
+
         <form onSubmit={handlePublish} className="space-y-4">
             
             <div>
@@ -279,15 +302,15 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
             <button 
             type="submit" 
-            disabled={!title || !desc || !location || isSubmitting}
+            disabled={!title || !desc || !location || isSubmitting || !cloudStatus}
             className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors mt-4
-                ${title && desc && location && !isSubmitting
+                ${title && desc && location && !isSubmitting && cloudStatus
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700' 
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
             `}
             >
             {isSubmitting ? (
-                <span>Pubblicazione in corso...</span>
+                <span>Pubblicazione...</span>
             ) : (
                 <>
                 <PlusCircle className="w-5 h-5" />
