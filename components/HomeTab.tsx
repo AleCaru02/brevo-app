@@ -90,7 +90,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                         />
                     </div>
                 </div>
-                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar">
+                {/* Added pr-6 to fix cut-off items */}
+                <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-6">
                     {CATEGORIES.map(cat => (
                         <button
                         key={cat}
@@ -214,7 +215,10 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
         <div className="p-4 pb-2">
           <div className="flex justify-between items-center mb-2">
              <h2 className="text-lg font-bold text-gray-900">Trova un professionista</h2>
-             <button onClick={() => loadData(true)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><RefreshCcw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} /></button>
+             {/* Removed persistent spinner, only shows when clicked/loading */}
+             <button onClick={() => loadData(true)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
+                 <RefreshCcw className={`w-4 h-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
+             </button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
@@ -228,7 +232,8 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
           </div>
         </div>
         
-        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar">
+        {/* Added pr-6 to fix cut-off items */}
+        <div className="flex overflow-x-auto px-4 pb-2 gap-2 hide-scrollbar pr-6">
           {CATEGORIES.map(cat => (
             <button
               key={cat}
@@ -254,7 +259,7 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     <Award className="w-5 h-5 text-yellow-500" />
                     I Migliori su Bravo
                 </h3>
-                <div className="flex overflow-x-auto gap-4 hide-scrollbar pb-2">
+                <div className="flex overflow-x-auto gap-4 hide-scrollbar pb-2 pr-4">
                     {topPros.map(pro => (
                         <div 
                             key={`leader-${pro.id}`} 
