@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, JobRequest } from '../types';
 import { saveRequest, getRequests, deleteRequest, isCloudConnected } from '../services/storage';
-import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, Loader2, Trash2 } from 'lucide-react';
+import { PlusCircle, Image as ImageIcon, Briefcase, MapPin, List, RefreshCw, AlertTriangle, CheckCircle, XCircle, WifiOff, Loader2, Trash2, Clock } from 'lucide-react';
 
 interface PublishTabProps {
   currentUser: User;
@@ -23,23 +24,21 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   
   // Dashboard Data
   const [myRequests, setMyRequests] = useState<JobRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   const isClient = currentUser.role === 'cliente';
 
   useEffect(() => {
-    if (isClient) {
+    if (isClient && mode === 'dashboard') {
         loadMyRequests();
     }
   }, [currentUser, mode]);
 
   const loadMyRequests = async () => {
-      // Fast load from local storage cache first
       try {
         const reqs = await getRequests();
+        // Case insensitive check to ensure requests always show up
         const filtered = reqs.filter(r => 
-            r.clientId.toLowerCase() === currentUser.email.toLowerCase() || 
-            r.clientName === currentUser.name
+            r.clientId.toLowerCase().trim() === currentUser.email.toLowerCase().trim()
         );
         setMyRequests(filtered);
       } catch (e) {
@@ -56,11 +55,9 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         return;
     }
 
-    // ULTRA-FAST UX: No loading state shown.
-    
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
-        clientId: currentUser.email.toLowerCase(),
+        clientId: currentUser.email.toLowerCase().trim(),
         clientName: currentUser.name,
         clientAvatar: currentUser.avatar || '',
         category,
@@ -74,28 +71,33 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         createdAt: new Date().toISOString()
     };
 
-    // Fire and forget (Storage handles local save instantly + cloud sync in background)
+    // 1. Save to Storage (Local + Cloud Background)
     saveRequest(newRequest);
     
-    // OPTIMISTIC UPDATE
+    // 2. Feedback
     setToast({msg: 'Richiesta pubblicata!', type: 'success'});
+    
+    // 3. Reset Form
     setTitle('');
     setDesc('');
     setBudget('');
     setLocation('');
     
+    // 4. OPTIMISTIC UPDATE: Add to local list immediately so it appears instantly
     setMyRequests(prev => [newRequest, ...prev]);
     
+    // 5. Switch to Dashboard view
     setTimeout(() => {
         setToast(null);
         setMode('dashboard'); 
-    }, 1000);
+    }, 800);
   };
 
   const handleDelete = async (id: string) => {
       if (confirm('Sei sicuro di voler eliminare questa richiesta?')) {
-          await deleteRequest(id);
+          // Optimistic UI Removal
           setMyRequests(prev => prev.filter(r => r.id !== id));
+          await deleteRequest(id);
       }
   }
 
@@ -123,9 +125,9 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                     <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><RefreshCw className="w-4 h-4" /></button>
                     <button 
                         onClick={() => setMode('new')}
-                        className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100"
+                        className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 flex items-center gap-1"
                     >
-                        + Nuova
+                        <PlusCircle className="w-4 h-4" /> Nuova
                     </button>
                  </div>
              </div>
@@ -144,13 +146,30 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                          if (req.status === 'completed') { statusColor = 'bg-green-100 text-green-800'; statusText = 'Completata'; }
 
                          return (
-                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${statusColor}`}>{statusText}</span>
-                                    <span className="text-xs text-gray-400">{new Date(req.createdAt).toLocaleDateString()}</span>
+                            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative group">
+                                {/* Header Row: Status + Date + Delete */}
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex flex-col gap-1">
+                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded w-fit ${statusColor}`}>{statusText}</span>
+                                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                                            <Clock className="w-3 h-3" /> {new Date(req.createdAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    
+                                    {/* Delete Button - Positioned in flow, not absolute, to prevent overlap */}
+                                    {req.status === 'open' && (
+                                        <button 
+                                            onClick={() => handleDelete(req.id)}
+                                            className="text-gray-400 hover:text-red-500 p-2 -mr-2 -mt-2 rounded-full hover:bg-red-50 transition-colors"
+                                            title="Elimina richiesta"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    )}
                                 </div>
-                                <h3 className="font-bold text-gray-900">{req.title}</h3>
-                                <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+
+                                <h3 className="font-bold text-gray-900 text-lg leading-tight mb-1">{req.title}</h3>
+                                <p className="text-xs text-gray-500 mb-3 flex items-center gap-1">
                                     <MapPin className="w-3 h-3" /> {req.location}
                                 </p>
                                 
@@ -158,22 +177,13 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
                                     <div className="text-gray-600">
                                         Budget: <span className="font-semibold text-gray-900">{req.budget}</span>
                                     </div>
-                                    <div className="flex items-center gap-1 text-gray-600">
+                                    <div className="flex items-center gap-1 text-gray-600 font-medium">
                                         <Briefcase className="w-4 h-4" />
                                         {req.status === 'open' 
                                             ? `${req.candidates.length} candidati` 
-                                            : `Assegnato a ${req.assignedPro}`}
+                                            : `Pro: ${req.assignedPro}`}
                                     </div>
                                 </div>
-                                
-                                {req.status === 'open' && (
-                                    <button 
-                                        onClick={() => handleDelete(req.id)}
-                                        className="absolute top-4 right-4 text-gray-400 hover:text-red-500 p-1"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                )}
                             </div>
                          );
                      })
