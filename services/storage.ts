@@ -35,6 +35,7 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
+// Increased to 60s to handle Supabase "cold start" (pausing)
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- HELPER FOR DB ACCESS ---
@@ -42,10 +43,10 @@ const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() 
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Extended timeout to 30s for slower connections
+            // Extended timeout to 45s for slower connections
             const { data, error } = await Promise.race([
                 supabase.from(tableName).select('*').limit(100),
-                timeoutPromise(30000)
+                timeoutPromise(45000)
             ]) as any;
             
             if (error) {
@@ -65,7 +66,7 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
 // SAVE ITEM WITH RETRY LOGIC
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     if (ENABLE_CLOUD && supabase) {
-        let retries = 2; // Try 3 times total
+        let retries = 3; // Try 4 times total
         
         while (retries >= 0) {
             try {
@@ -74,9 +75,10 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
 
                 console.log(`☁️ Saving to ${tableName}... (Attempts left: ${retries})`);
                 
+                // Huge timeout for writes (60s) to allow database wake-up
                 const { error } = await Promise.race([
                     supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                    timeoutPromise(30000)
+                    timeoutPromise(60000)
                 ]) as any;
                 
                 if (error) {
@@ -95,8 +97,8 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
                      if (e.message === 'TIMEOUT') return { success: false, error: 'TIMEOUT_DB_SLOW' };
                      return { success: false, error: 'EXCEPTION' };
                 }
-                // Wait 1.5 second before retrying
-                await new Promise(r => setTimeout(r, 1500));
+                // Exponential backoff: 1s, 2s, 4s
+                await new Promise(r => setTimeout(r, 1000 * (4 - retries)));
                 retries--;
             }
         }
@@ -152,7 +154,7 @@ export const loginUserByEmail = async (email: string, password?: string): Promis
         try {
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('*').eq('email', email).maybeSingle(),
-                timeoutPromise(30000)
+                timeoutPromise(45000)
             ]) as any;
             
             if (error) {
