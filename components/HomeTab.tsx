@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Post, User, JobRequest } from '../types';
 import { getPosts, getRequests, applyToRequest, getTopPros } from '../services/storage';
-import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award, Filter } from 'lucide-react';
+import { Search, MapPin, Star, MessageCircle, Briefcase, Clock, Users, CheckCircle, Award } from 'lucide-react';
 
 interface HomeTabProps {
   currentUser: User;
@@ -89,23 +89,23 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
                     </div>
                 </div>
                 
-                {/* Fixed scroll container with extra padding/spacer */}
-                <div className="flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full items-center">
-                    {CATEGORIES.map(cat => (
-                        <button
-                        key={cat}
-                        onClick={() => setActiveCategory(cat)}
-                        className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
-                            activeCategory === cat 
-                            ? 'bg-green-600 text-white shadow-md shadow-green-200' 
-                            : 'bg-white text-gray-600 border border-gray-200'
-                        }`}
-                        >
-                        {cat}
-                        </button>
-                    ))}
-                    {/* SPACER FOR SCROLL - Prevents last item cut-off */}
-                    <div className="w-12 h-1 flex-shrink-0"></div>
+                {/* FIXED SCROLLING CONTAINER */}
+                <div className="w-full overflow-x-auto hide-scrollbar">
+                    <div className="flex px-4 pb-2 gap-2 min-w-max pr-24">
+                        {CATEGORIES.map(cat => (
+                            <button
+                            key={cat}
+                            onClick={() => setActiveCategory(cat)}
+                            className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                                activeCategory === cat 
+                                ? 'bg-green-600 text-white shadow-md shadow-green-200' 
+                                : 'bg-white text-gray-600 border border-gray-200'
+                            }`}
+                            >
+                            {cat}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -228,23 +228,23 @@ export const HomeTab: React.FC<HomeTabProps> = ({ currentUser, onOpenProProfile,
           </div>
         </div>
         
-        {/* Fixed scroll container with extra padding/spacer */}
-        <div className="flex overflow-x-auto px-4 pb-4 gap-2 hide-scrollbar w-full items-center">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors flex-shrink-0 ${
-                activeCategory === cat 
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
-                  : 'bg-white text-gray-600 border border-gray-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-          {/* SPACER FOR SCROLL - Prevents last item cut-off */}
-          <div className="w-12 h-1 flex-shrink-0"></div>
+        {/* FIXED SCROLLING CONTAINER */}
+        <div className="w-full overflow-x-auto hide-scrollbar">
+            <div className="flex px-4 pb-2 gap-2 min-w-max pr-24">
+                {CATEGORIES.map(cat => (
+                    <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                        activeCategory === cat 
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-200' 
+                        : 'bg-white text-gray-600 border border-gray-200'
+                    }`}
+                    >
+                    {cat}
+                    </button>
+                ))}
+            </div>
         </div>
       </div>
 
