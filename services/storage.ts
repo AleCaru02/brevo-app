@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURATION ---
 const SUPABASE_URL = 'https://rtxhpxqsnaxdiomyqsem.supabase.co';
-// FIXED KEY: Correct anon key provided
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0eGhweHFzbmF4ZGlvbXlxc2VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUxMTc1NjAsImV4cCI6MjA4MDY5MzU2MH0.fq64nzOhQhDN26lQp5EBB4_WO8A8f6aMhYcdAEmf0Qo';
 
 // Force Cloud mode if keys are present
@@ -35,7 +34,6 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
-// Increased to 30s for slow connections/cold starts
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- Mock Data Fallback ---
@@ -81,31 +79,44 @@ async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> 
     }
 }
 
+// SAVE ITEM WITH RETRY LOGIC
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     if (ENABLE_CLOUD && supabase) {
-        try {
-            const id = (item as any)[idField];
-            if (!id) return { success: false, error: 'Missing ID' };
+        let retries = 2; // Try up to 3 times total
+        
+        while (retries >= 0) {
+            try {
+                const id = (item as any)[idField];
+                if (!id) return { success: false, error: 'Missing ID' };
 
-            console.log(`☁️ Saving to ${tableName}...`);
-            
-            // Race condition: if save takes > 30s, throw error so UI unblocks
-            const { error } = await Promise.race([
-                supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                timeoutPromise(30000)
-            ]) as any;
-            
-            if (error) {
-                console.error(`🔥 WRITE ERROR [${tableName}]:`, error.message, error.code);
-                if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; 
-                if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
-                return { success: false, error: error.message };
+                console.log(`☁️ Saving to ${tableName}... (Attempts left: ${retries})`);
+                
+                const { error } = await Promise.race([
+                    supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
+                    timeoutPromise(30000)
+                ]) as any;
+                
+                if (error) {
+                    console.error(`🔥 WRITE ERROR [${tableName}]:`, error.message, error.code);
+                    // RLS or Table Missing errors won't be fixed by retrying
+                    if (error.code === '42501') return { success: false, error: 'PERMISSIONS_DENIED' }; 
+                    if (error.code === '42P01') return { success: false, error: 'TABLE_MISSING' };
+                    
+                    if (retries === 0) return { success: false, error: error.message };
+                    throw new Error("Supabase Error"); // Force retry
+                }
+                
+                return { success: true };
+            } catch (e: any) {
+                console.error(`Exception saving to ${tableName}:`, e);
+                if (retries === 0) {
+                     if (e.message === 'TIMEOUT') return { success: false, error: 'TIMEOUT_DB_SLOW' };
+                     return { success: false, error: 'EXCEPTION' };
+                }
+                // Wait 1 second before retrying
+                await new Promise(r => setTimeout(r, 1000));
+                retries--;
             }
-            return { success: true };
-        } catch (e: any) {
-            console.error(`Exception saving to ${tableName}:`, e);
-            if (e.message === 'TIMEOUT') return { success: false, error: 'TIMEOUT_DB_SLOW' };
-            return { success: false, error: 'EXCEPTION' };
         }
     }
     
@@ -127,11 +138,8 @@ export const getAllRegisteredUsers = async (): Promise<User[]> => {
 export const registerUser = async (user: User): Promise<{ success: boolean; msg?: string }> => {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Check existence with timeout
-            const { data, error } = await Promise.race([
-                supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle(),
-                timeoutPromise(30000)
-            ]) as any;
+            // Check existence
+            const { data, error } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
             
             if (error) {
                 if (error.code === '42P01') return { success: false, msg: 'TABLE_MISSING' };
