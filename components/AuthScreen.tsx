@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, loginUserByEmail, registerUser, isCloudConnected } from '../services/storage';
-import { MapPin, Lock, Chrome, Wifi, WifiOff, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { MapPin, Lock, Chrome, Wifi, WifiOff, Eye, EyeOff, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -72,7 +72,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 name,
                 role,
                 piva: role === 'professionista' ? piva : null,
-                email,
+                email: email.trim().toLowerCase(), // Normalize email
                 phone,
                 city,
                 password, 
@@ -105,6 +105,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
       setShowGoogleConfirm(false);
       setIsLoading(true);
       
+      // Simulate slight delay for realism
       setTimeout(async () => {
         const mockEmail = `mario.google@gmail.com`;
         const res = await loginUserByEmail(mockEmail);
@@ -137,7 +138,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
             }
         }
         setIsLoading(false);
-      }, 1000);
+      }, 1500);
   }
 
   return (
@@ -181,11 +182,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
             className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg p-3 text-gray-700 font-bold hover:bg-gray-50 transition-colors mb-6 shadow-sm active:scale-[0.98]"
         >
              {isLoading ? (
-                 <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                 <Loader2 className="w-5 h-5 text-gray-500 animate-spin" />
              ) : (
                  <Chrome className="w-5 h-5 text-red-500" />
              )}
-             {isLoading ? 'Attendi...' : 'Continua con Google'}
+             {isLoading ? 'Accesso in corso...' : 'Continua con Google'}
         </button>
 
         <div className="relative mb-6">
