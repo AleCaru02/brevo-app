@@ -14,6 +14,9 @@ if (ENABLE_CLOUD) {
         supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
             auth: { persistSession: true, autoRefreshToken: true },
             db: { schema: 'public' },
+            global: {
+                headers: { 'x-my-custom-header': 'bravo-app' },
+            },
         });
     } catch (e) {
         console.error("❌ Failed to init Supabase:", e);
@@ -34,44 +37,45 @@ const COMMISSION_RATE = 0.05;
 // --- HELPER FOR DB ACCESS ---
 
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
-    // 1. Try Cloud
+    // 1. Try LocalStorage FIRST (Instant Load)
+    const localData = JSON.parse(localStorage.getItem(localKey) || '[]');
+    
+    // 2. Trigger Background Refresh from Cloud (if enabled)
     if (ENABLE_CLOUD && supabase) {
+        // We don't await this to keep UI fast, but we update local storage for next time
+        supabase.from(tableName).select('*').limit(500)
+            .then(({ data, error }: any) => {
+                if (!error && data) {
+                    const cloudPayloads = data.map((row: any) => row.payload);
+                    localStorage.setItem(localKey, JSON.stringify(cloudPayloads));
+                    // Optional: Dispatch event to refresh UI if needed, but usually React handles state
+                }
+            });
+    }
+
+    // 3. If local is empty but cloud is enabled, try to wait for cloud (Cold Start handling)
+    if (localData.length === 0 && ENABLE_CLOUD && supabase) {
         try {
-            const { data, error } = await supabase.from(tableName).select('*').limit(200);
+            const { data, error } = await supabase.from(tableName).select('*').limit(500);
             if (!error && data) {
-                return data.map((row: any) => row.payload) as T[];
+                const cloudData = data.map((row: any) => row.payload) as T[];
+                localStorage.setItem(localKey, JSON.stringify(cloudData));
+                return cloudData;
             }
         } catch (e) {
-            console.warn(`⚠️ Cloud Read Error [${tableName}], using LocalStorage fallback.`);
+            console.warn(`⚠️ Cloud Fetch Error [${tableName}]`);
         }
-    } 
+    }
     
-    // 2. Fallback to LocalStorage
-    return JSON.parse(localStorage.getItem(localKey) || '[]');
+    return localData as T[];
 }
 
-// SAVE ITEM WITH HYBRID FALLBACK
+// ULTRA-FAST SAVE (Optimistic)
 async function saveItem<T extends { id?: string, email?: string }>(tableName: string, localKey: string, item: T, idField: keyof T = 'id'): Promise<{ success: boolean; error?: string }> {
     const id = (item as any)[idField];
     if (!id) return { success: false, error: 'Missing ID' };
 
-    let cloudSuccess = false;
-
-    // 1. Try Cloud Save
-    if (ENABLE_CLOUD && supabase) {
-        try {
-            const { error } = await supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField });
-            if (!error) {
-                cloudSuccess = true;
-            } else {
-                console.error(`Cloud Save Error [${tableName}]:`, error);
-            }
-        } catch (e) {
-            console.error(`Cloud Connection Error [${tableName}]:`, e);
-        }
-    }
-
-    // 2. ALWAYS Save to LocalStorage (Backup/Offline mode)
+    // 1. INSTANT LOCAL SAVE
     try {
         const list = JSON.parse(localStorage.getItem(localKey) || '[]');
         const idx = list.findIndex((x: any) => (x as any)[idField] === (item as any)[idField]);
@@ -82,8 +86,20 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
         console.error("LocalStorage Error:", e);
     }
 
-    // Return success even if cloud failed (Optimistic UI)
-    // The user doesn't care if it's cloud or local, they just want it to "work"
+    // 2. BACKGROUND CLOUD SYNC (Fire & Forget)
+    if (ENABLE_CLOUD && supabase) {
+        // We do NOT await this. We let it run in background.
+        // If the DB is sleeping, it will wake up and save eventually.
+        // If it fails, the user at least has the data locally.
+        supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField })
+            .then(({ error }: any) => {
+                if (error) console.error(`Background Sync Error [${tableName}]:`, error);
+                else console.log(`Background Sync Success [${tableName}]`);
+            })
+            .catch((err: any) => console.error(`Background Sync Network Error:`, err));
+    }
+
+    // 3. Return SUCCESS Immediately
     return { success: true }; 
 }
 
@@ -99,11 +115,18 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
     user.isVerified = false;
     user.walletBalance = 0;
 
-    // Check existence locally and cloud
+    // Check existence (This still needs to await to avoid duplicates, but we set a short timeout)
     if (ENABLE_CLOUD && supabase) {
         try {
-            const { data } = await supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
-            if (data) return { success: false, msg: 'EXISTS' };
+            const checkPromise = supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle();
+            // Race against a 2s timeout so registration doesn't hang
+            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 2000));
+            
+            const result: any = await Promise.race([checkPromise, timeoutPromise]);
+            
+            if (result !== 'TIMEOUT' && result.data) {
+                return { success: false, msg: 'EXISTS' };
+            }
         } catch(e) {}
     }
 
@@ -114,23 +137,23 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
 export const loginUserByEmail = async (email: string, password?: string): Promise<{ success: boolean, user?: User, msg?: string }> => {
     const cleanEmail = email.toLowerCase().trim();
     
-    // Try Cloud Login
-    if (ENABLE_CLOUD && supabase) {
+    // Try Local First for speed
+    const localUsers = JSON.parse(localStorage.getItem(KEYS.USERS_DB) || '[]');
+    let user = localUsers.find((u: User) => u.email === cleanEmail);
+
+    // If not local, try cloud with timeout
+    if (!user && ENABLE_CLOUD && supabase) {
         try {
             const { data } = await supabase.from('bravo_users').select('*').eq('email', cleanEmail).maybeSingle();
             if (data) {
-                const user = data.payload as User;
-                if (password !== undefined && user.password && user.password !== password) {
-                     return { success: false, msg: 'Password errata.' };
-                }
-                return { success: true, user };
+                user = data.payload as User;
+                // Cache it locally
+                localUsers.push(user);
+                localStorage.setItem(KEYS.USERS_DB, JSON.stringify(localUsers));
             }
         } catch (e) {}
     }
 
-    // Fallback Local Login
-    const users = await getAllRegisteredUsers();
-    const user = users.find(u => u.email === cleanEmail);
     if (user) {
          if (password !== undefined && user.password && user.password !== password) {
              return { success: false, msg: 'Password errata.' };
