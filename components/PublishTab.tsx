@@ -20,9 +20,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const [budget, setBudget] = useState('');
   const [category, setCategory] = useState('Idraulico');
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState(true);
-
+  
   // Dashboard Data
   const [myRequests, setMyRequests] = useState<JobRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,14 +28,13 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
   const isClient = currentUser.role === 'cliente';
 
   useEffect(() => {
-    setCloudStatus(isCloudConnected());
     if (isClient) {
         loadMyRequests();
     }
   }, [currentUser, mode]);
 
   const loadMyRequests = async () => {
-      setIsLoading(true);
+      // Fast load from local storage cache first
       try {
         const reqs = await getRequests();
         const filtered = reqs.filter(r => 
@@ -47,8 +44,6 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         setMyRequests(filtered);
       } catch (e) {
         console.error("Failed to load requests", e);
-      } finally {
-        setIsLoading(false);
       }
   }
 
@@ -61,8 +56,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         return;
     }
 
-    setIsSubmitting(true);
-    setToast({msg: 'Pubblicazione in corso...', type: 'info'});
+    // ULTRA-FAST UX: No loading state shown.
     
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
@@ -80,28 +74,22 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
         createdAt: new Date().toISOString()
     };
 
-    try {
-        const res = await saveRequest(newRequest);
-        
-        // Always succeed because of hybrid fallback
-        setToast({msg: 'Richiesta pubblicata!', type: 'success'});
-        setTitle('');
-        setDesc('');
-        setBudget('');
-        setLocation('');
-        
-        setMyRequests(prev => [newRequest, ...prev]);
-        
-        setTimeout(() => {
-            setToast(null);
-            setMode('dashboard'); 
-        }, 1500);
-
-    } catch (e) {
-        setToast({msg: 'Errore imprevisto.', type: 'error'});
-    } finally {
-        setIsSubmitting(false);
-    }
+    // Fire and forget (Storage handles local save instantly + cloud sync in background)
+    saveRequest(newRequest);
+    
+    // OPTIMISTIC UPDATE
+    setToast({msg: 'Richiesta pubblicata!', type: 'success'});
+    setTitle('');
+    setDesc('');
+    setBudget('');
+    setLocation('');
+    
+    setMyRequests(prev => [newRequest, ...prev]);
+    
+    setTimeout(() => {
+        setToast(null);
+        setMode('dashboard'); 
+    }, 1000);
   };
 
   if (!isClient) {
@@ -125,7 +113,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
              <div className="bg-white p-4 sticky top-0 z-10 shadow-sm flex justify-between items-center">
                  <h2 className="text-xl font-bold text-gray-900">Le mie Richieste</h2>
                  <div className="flex gap-2">
-                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></button>
+                    <button onClick={loadMyRequests} className="p-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><RefreshCw className="w-4 h-4" /></button>
                     <button 
                         onClick={() => setMode('new')}
                         className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100"
@@ -136,11 +124,7 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
              </div>
              
              <div className="p-4 space-y-4">
-                 {isLoading && myRequests.length === 0 && (
-                     <div className="text-center py-10"><RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500"/></div>
-                 )}
-                 
-                 {!isLoading && myRequests.length === 0 ? (
+                 {myRequests.length === 0 ? (
                      <div className="text-center py-10 text-gray-400">
                          <List className="w-12 h-12 mx-auto mb-2 opacity-50" />
                          <p>Non hai ancora pubblicato richieste.</p>
@@ -190,9 +174,8 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             <h2 className="text-xl font-bold text-gray-900">Nuova Richiesta</h2>
             <button 
             onClick={() => {
-                if(!isSubmitting) setMode('dashboard');
+                setMode('dashboard');
             }}
-            disabled={isSubmitting}
             className="text-sm font-bold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full hover:bg-gray-200"
             >
                 Le mie Richieste
@@ -280,30 +263,21 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
 
             <button 
             type="submit" 
-            disabled={!title || !desc || !location || isSubmitting}
+            disabled={!title || !desc || !location}
             className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors mt-4
-                ${title && desc && location && !isSubmitting
+                ${title && desc && location
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700' 
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
             `}
             >
-            {isSubmitting ? (
-                <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Pubblicazione...</span>
-                </>
-            ) : (
-                <>
                 <PlusCircle className="w-5 h-5" />
                 Pubblica Richiesta
-                </>
-            )}
             </button>
         </form>
 
         {toast && (
             <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-xs py-3 px-4 rounded-xl shadow-2xl animate-fade-in-up z-50 w-max max-w-[90%] text-center flex items-center gap-2 font-bold ${toast.type === 'error' ? 'bg-red-600' : (toast.type === 'info' ? 'bg-blue-600' : 'bg-green-600')}`}>
-                {toast.type === 'error' ? <XCircle className="w-5 h-5 min-w-[20px]" /> : (toast.type === 'info' ? <Loader2 className="w-5 h-5 min-w-[20px] animate-spin" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />)}
+                {toast.type === 'error' ? <XCircle className="w-5 h-5 min-w-[20px]" /> : <CheckCircle className="w-5 h-5 min-w-[20px]" />}
                 <span>{toast.msg}</span>
             </div>
         )}
