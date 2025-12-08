@@ -41,7 +41,12 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
       setIsLoading(true);
       try {
         const reqs = await getRequests();
-        setMyRequests(reqs.filter(r => r.clientId === currentUser.email || r.clientName === currentUser.name));
+        // Robust filtering: check both ID and Name to be safe
+        const filtered = reqs.filter(r => 
+            r.clientId.toLowerCase() === currentUser.email.toLowerCase() || 
+            r.clientName === currentUser.name
+        );
+        setMyRequests(filtered);
       } catch (e) {
         console.error("Failed to load requests", e);
       } finally {
@@ -63,13 +68,11 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
     }
 
     setIsSubmitting(true);
-    setToast({msg: 'Connessione al database... (potrebbe richiedere tempo)', type: 'info'});
-
-    // NOTA: Non usiamo più un setTimeout qui. Ci affidiamo a saveRequest che ha un timeout interno di 90s.
+    setToast({msg: 'Pubblicazione in corso...', type: 'info'});
     
     const newRequest: JobRequest = {
         id: `req_${Date.now()}`,
-        clientId: currentUser.email,
+        clientId: currentUser.email.toLowerCase(), // Force lowercase
         clientName: currentUser.name,
         clientAvatar: currentUser.avatar || '',
         category,
@@ -93,17 +96,20 @@ export const PublishTab: React.FC<PublishTabProps> = ({ currentUser, onSuccess }
             setBudget('');
             setLocation('');
             
+            // OPTIMISTIC UPDATE: Add immediately to local list
+            setMyRequests(prev => [newRequest, ...prev]);
+            
             setTimeout(() => {
                 setToast(null);
                 setMode('dashboard'); 
-            }, 1500);
+            }, 1000);
         } else {
             if (res.error === 'PERMISSIONS_DENIED') {
                  setToast({msg: 'ERRORE PERMESSI (RLS). Esegui SQL su Supabase.', type: 'error'});
             } else if (res.error === 'TABLE_MISSING') {
                  setToast({msg: 'ERRORE: Tabelle Database non trovate.', type: 'error'});
             } else if (res.error === 'TIMEOUT_DB_SLOW') {
-                 setToast({msg: 'Il database è ancora in fase di avvio. Riprova tra 30 secondi.', type: 'error'});
+                 setToast({msg: 'Il database è lento. Riprova tra poco.', type: 'error'});
             } else {
                  setToast({msg: `Errore: ${res.error}`, type: 'error'});
             }
