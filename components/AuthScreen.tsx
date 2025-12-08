@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, loginUserByEmail, registerUser, isCloudConnected } from '../services/storage';
-import { MapPin, Lock, Chrome, Wifi, WifiOff, Eye, EyeOff } from 'lucide-react';
+import { MapPin, Lock, Chrome, Wifi, WifiOff, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 interface AuthScreenProps {
   onLogin: (user: User) => void;
@@ -25,6 +25,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
   const [piva, setPiva] = useState('');
   const [password, setPassword] = useState(''); 
   const [error, setError] = useState('');
+
+  // Google Simulation
+  const [showGoogleConfirm, setShowGoogleConfirm] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +75,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 email,
                 phone,
                 city,
-                password, // Saving plain for demo
+                password, 
                 bio: role === 'professionista' ? `Professionista operativo a ${city}` : `Cliente di ${city}`,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${role === 'cliente' ? '007AFF' : '10b981'}&color=fff`,
                 walletBalance: 0,
@@ -98,7 +101,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const executeGoogleLogin = async () => {
+      setShowGoogleConfirm(false);
       setIsLoading(true);
       
       setTimeout(async () => {
@@ -114,13 +118,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
                 role: 'cliente',
                 piva: null,
                 email: mockEmail,
-                phone: '',
+                phone: '3330000000',
                 city: 'Milano',
                 bio: `Utente verificato con Google`,
                 avatar: `https://ui-avatars.com/api/?name=Mario+Google&background=DB4437&color=fff`,
                 verificationStatus: 'verified',
                 isVerified: true,
-                walletBalance: 0
+                walletBalance: 0,
+                password: 'google_mock_password' 
             };
             const regRes = await registerUser(newUser);
             if (regRes.success || regRes.msg === 'EXISTS') {
@@ -132,7 +137,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
             }
         }
         setIsLoading(false);
-      }, 1500);
+      }, 1000);
   }
 
   return (
@@ -144,6 +149,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
           </span>
       </div>
 
+      {showGoogleConfirm && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 animate-fade-in">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+                  <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+                      <Chrome className="w-5 h-5 text-red-500"/> Demo Mode
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                      Questa è una simulazione. Per usare il vero Login Google serve una configurazione backend complessa (non disponibile in questa demo).
+                      <br/><br/>
+                      Vuoi continuare con un account Google simulato (Mario Google)?
+                  </p>
+                  <div className="flex gap-2">
+                      <button onClick={() => setShowGoogleConfirm(false)} className="flex-1 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">Annulla</button>
+                      <button onClick={executeGoogleLogin} className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold">Continua</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl relative animate-fade-in-up border border-gray-100">
         
         <div className="mb-6 text-center">
@@ -152,7 +176,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
         </div>
 
         <button 
-            onClick={handleGoogleLogin}
+            onClick={() => setShowGoogleConfirm(true)}
             disabled={isLoading}
             className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg p-3 text-gray-700 font-bold hover:bg-gray-50 transition-colors mb-6 shadow-sm active:scale-[0.98]"
         >
