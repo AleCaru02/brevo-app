@@ -35,7 +35,7 @@ const KEYS = {
 const COMMISSION_RATE = 0.05;
 
 // --- TIMEOUT HELPER ---
-// Aumentato a 20 secondi per connessioni lente
+// Increased to 30s for slow connections/cold starts
 const timeoutPromise = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
 
 // --- Mock Data Fallback ---
@@ -61,10 +61,10 @@ const SAMPLE_POSTS: Post[] = [
 async function fetchTable<T>(tableName: string, localKey: string): Promise<T[]> {
     if (ENABLE_CLOUD && supabase) {
         try {
-            // Race condition: if fetch takes > 20s, timeout
+            // Race condition: if fetch takes > 30s, timeout
             const { data, error } = await Promise.race([
                 supabase.from(tableName).select('*').limit(100),
-                timeoutPromise(20000)
+                timeoutPromise(30000)
             ]) as any;
             
             if (error) {
@@ -89,10 +89,10 @@ async function saveItem<T extends { id?: string, email?: string }>(tableName: st
 
             console.log(`☁️ Saving to ${tableName}...`);
             
-            // Race condition: if save takes > 20s, throw error so UI unblocks
+            // Race condition: if save takes > 30s, throw error so UI unblocks
             const { error } = await Promise.race([
                 supabase.from(tableName).upsert({ [idField]: id, payload: item }, { onConflict: idField }),
-                timeoutPromise(20000)
+                timeoutPromise(30000)
             ]) as any;
             
             if (error) {
@@ -130,7 +130,7 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
             // Check existence with timeout
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('email').eq('email', user.email).maybeSingle(),
-                timeoutPromise(20000)
+                timeoutPromise(30000)
             ]) as any;
             
             if (error) {
@@ -161,21 +161,36 @@ export const registerUser = async (user: User): Promise<{ success: boolean; msg?
     return { success: true };
 }
 
-export const loginUserByEmail = async (email: string): Promise<User | null> => {
+export const loginUserByEmail = async (email: string, password?: string): Promise<{ success: boolean, user?: User, msg?: string }> => {
     if (ENABLE_CLOUD && supabase) {
         try {
             const { data, error } = await Promise.race([
                 supabase.from('bravo_users').select('*').eq('email', email).maybeSingle(),
-                timeoutPromise(20000)
+                timeoutPromise(30000)
             ]) as any;
             
-            if (error) console.error("Login Error:", error.message);
-            if (!data) return null;
-            return data.payload as User;
-        } catch (e) { return null; }
+            if (error) {
+                console.error("Login Error:", error.message);
+                return { success: false, msg: 'Errore connessione.' };
+            }
+            if (!data) return { success: false, msg: 'Utente non trovato.' };
+            
+            const user = data.payload as User;
+            
+            // Password check (simple string compare for demo)
+            if (password && user.password && user.password !== password) {
+                return { success: false, msg: 'Password errata.' };
+            }
+            
+            return { success: true, user };
+        } catch (e) { return { success: false, msg: 'Timeout connessione.' }; }
     }
     const users = await getAllRegisteredUsers();
-    return users.find(u => u.email === email) || null;
+    const user = users.find(u => u.email === email);
+    if (!user) return { success: false, msg: 'Utente non trovato.' };
+    if (password && user.password && user.password !== password) return { success: false, msg: 'Password errata.' };
+    
+    return { success: true, user };
 }
 
 export const getCurrentUser = (): User | null => {
@@ -185,6 +200,7 @@ export const getCurrentUser = (): User | null => {
 
 export const saveCurrentUser = async (user: User) => {
     localStorage.setItem(KEYS.USER, JSON.stringify(user));
+    // Also update in cloud
     await saveItem('bravo_users', KEYS.USERS_DB, user, 'email');
     window.dispatchEvent(new Event('storage'));
 };
