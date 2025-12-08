@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { User, Role } from '../types';
 import { saveCurrentUser, loginUserByEmail, registerUser, isCloudConnected } from '../services/storage';
@@ -334,4 +333,3 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLogin, onAdmin }) => {
     </div>
   );
 };
- 
